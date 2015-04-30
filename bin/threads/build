@@ -1,0 +1,5 @@
+#!/bin/sh
+
+gcc main.c -O0 -g -o main -l pthread
+[ "$?" != "0" ] && exit 1
+

@@ -1,0 +1,12 @@
+#!/bin/sh
+
+GCC=gcc
+
+${GCC} main.c -c -O0 -g
+[ "$?" != 0 ] && exit 1
+
+${GCC} main.o -o main
+[ "$?" != 0 ] && exit 1
+
+./main
+
