@@ -1,0 +1,5 @@
+# VI Tmp files.
+.*.swp
+
+*.o
+
