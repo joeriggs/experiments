@@ -1,5 +1,7 @@
 # VI Tmp files.
 .*.swp
 
+.gdbinit
+
 *.o
 

@@ -2,9 +2,12 @@
 
 ###############################################################################
 # Give the name of program and it'll tell you where the various threads are
-# running.  If there is more than one instance of the process, it will only
-# report the threads for the first instance it finds.  You can easily extend
-# the script to look for more than one instance of the process.
+# running.  This is useful for matching thread IDs against the thread numbers
+# that are used by gdb.
+#
+# NOTE: If there is more than one instance of the process, it will only report
+# the threads for the first instance it finds.  You can easily extend the
+# script to look for more than one instance of the process.
 ###############################################################################
 
 PROCESS_NAME="${1}"
