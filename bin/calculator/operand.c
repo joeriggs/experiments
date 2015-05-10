@@ -65,25 +65,26 @@ operand_op_add(operand *op1,
 {
   bool retcode = false;
 
-  bool is_fp1, is_fp2;
-  int      i1,     i2;
-  double   f1,     f2;
+  bool   is_fp1,   is_fp2;
+  int    i1 = 0,   i2 = 0;
+  double f1 = 0.0, f2 = 0.0;
 
-  operand_get_val(op1, &is_fp1, &i1, &f1);
-  operand_get_val(op2, &is_fp2, &i2, &f2);
-
-  if(is_fp1 || is_fp2)
+  if( (operand_get_val(op1, &is_fp1, &i1, &f1) == true) &&
+      (operand_get_val(op2, &is_fp2, &i2, &f2) == true) )
   {
-    f1 = is_fp1 ? f1 : i1;
-    f2 = is_fp2 ? f2 : i2;
-    op1->d_val = f1 + f2;
-    op1->got_decimal_point = true;
-    retcode = true;
-  }
-  else
-  {
-    op1->i_val += op2->i_val;
-    retcode = true;
+    if(is_fp1 || is_fp2)
+    {
+      f1 = is_fp1 ? f1 : i1;
+      f2 = is_fp2 ? f2 : i2;
+      op1->d_val = f1 + f2;
+      op1->got_decimal_point = true;
+      retcode = true;
+    }
+    else
+    {
+      op1->i_val += op2->i_val;
+      retcode = true;
+    }
   }
 
   return retcode;
@@ -106,25 +107,26 @@ operand_op_sub(operand *op1,
 {
   bool retcode = false;
 
-  bool is_fp1, is_fp2;
-  int      i1,     i2;
-  double   f1,     f2;
+  bool   is_fp1,   is_fp2;
+  int    i1 = 0,   i2 = 0;
+  double f1 = 0.0, f2 = 0.0;
 
-  operand_get_val(op1, &is_fp1, &i1, &f1);
-  operand_get_val(op2, &is_fp2, &i2, &f2);
-
-  if(is_fp1 || is_fp2)
+  if( (operand_get_val(op1, &is_fp1, &i1, &f1) == true) &&
+      (operand_get_val(op2, &is_fp2, &i2, &f2) == true) )
   {
-    f1 = is_fp1 ? f1 : i1;
-    f2 = is_fp2 ? f2 : i2;
-    op1->d_val = f1 - f2;
-    op1->got_decimal_point = true;
-    retcode = true;
-  }
-  else
-  {
-    op1->i_val -= op2->i_val;
-    retcode = true;
+    if(is_fp1 || is_fp2)
+    {
+      f1 = is_fp1 ? f1 : i1;
+      f2 = is_fp2 ? f2 : i2;
+      op1->d_val = f1 - f2;
+      op1->got_decimal_point = true;
+      retcode = true;
+    }
+    else
+    {
+      op1->i_val -= op2->i_val;
+      retcode = true;
+    }
   }
 
   return retcode;
@@ -147,25 +149,26 @@ operand_op_mul(operand *op1,
 {
   bool retcode = false;
 
-  bool is_fp1, is_fp2;
-  int      i1,     i2;
-  double   f1,     f2;
+  bool   is_fp1,   is_fp2;
+  int    i1 = 0,   i2 = 0;
+  double f1 = 0.0, f2 = 0.0;
 
-  operand_get_val(op1, &is_fp1, &i1, &f1);
-  operand_get_val(op2, &is_fp2, &i2, &f2);
-
-  if(is_fp1 || is_fp2)
+  if( (operand_get_val(op1, &is_fp1, &i1, &f1) == true) &&
+      (operand_get_val(op2, &is_fp2, &i2, &f2) == true) )
   {
-    f1 = is_fp1 ? f1 : i1;
-    f2 = is_fp2 ? f2 : i2;
-    op1->d_val = f1 * f2;
-    op1->got_decimal_point = true;
-    retcode = true;
-  }
-  else
-  {
-    op1->i_val *= op2->i_val;
-    retcode = true;
+    if(is_fp1 || is_fp2)
+    {
+      f1 = is_fp1 ? f1 : i1;
+      f2 = is_fp2 ? f2 : i2;
+      op1->d_val = f1 * f2;
+      op1->got_decimal_point = true;
+      retcode = true;
+    }
+    else
+    {
+      op1->i_val *= op2->i_val;
+      retcode = true;
+    }
   }
 
   return retcode;
@@ -187,30 +190,31 @@ operand_op_div(operand *op1,
 {
   bool retcode = false;
 
-  bool is_fp1, is_fp2;
-  int      i1,     i2;
-  double   f1,     f2;
+  bool   is_fp1,   is_fp2;
+  int    i1 = 0,   i2 = 0;
+  double f1 = 0.0, f2 = 0.0;
 
-  operand_get_val(op1, &is_fp1, &i1, &f1);
-  operand_get_val(op2, &is_fp2, &i2, &f2);
-
-  if(is_fp1 || is_fp2)
+  if( (operand_get_val(op1, &is_fp1, &i1, &f1) == true) &&
+      (operand_get_val(op2, &is_fp2, &i2, &f2) == true) )
   {
-    if(f2 != 0)
+    if(is_fp1 || is_fp2)
     {
-      f1 = is_fp1 ? f1 : i1;
-      f2 = is_fp2 ? f2 : i2;
-      op1->d_val = f1 / f2;
-      op1->got_decimal_point = true;
-      retcode = true;
+      if(f2 != 0)
+      {
+        f1 = is_fp1 ? f1 : i1;
+        f2 = is_fp2 ? f2 : i2;
+        op1->d_val = f1 / f2;
+        op1->got_decimal_point = true;
+        retcode = true;
+      }
     }
-  }
-  else
-  {
-    if(op2->i_val != 0)
+    else
     {
-      op1->i_val /= op2->i_val;
-      retcode = true;
+      if(op2->i_val != 0)
+      {
+        op1->i_val /= op2->i_val;
+        retcode = true;
+      }
     }
   }
 
@@ -383,16 +387,16 @@ operand_add_char(operand *this,
  *           is_fp == true.
  *
  * Output:
- *   Returns 0 if successful.
- *   Returns 1 if unsuccessful.
+ *   true  = successful.
+ *   false = unsuccessful.
  */
-int
+bool
 operand_get_val(operand *this,
                 bool    *is_fp,
                 int     *i_val,
                 double  *d_val)
 {
-  int retval = 1;
+  bool retcode = false;
 
   if(this != (operand *) 0)
   {
@@ -405,10 +409,10 @@ operand_get_val(operand *this,
       *i_val = this->i_val;
     }
 
-    retval = 0;
+    retcode = true;
   }
 
-  return retval;
+  return retcode;
 }
 
 /******************************************************************************

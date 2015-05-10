@@ -24,7 +24,7 @@ bool operand_delete(operand *this);
 
 int operand_add_char(operand *this, char c);
 
-int operand_get_val(operand *this, bool *is_fp, int *i_val, double *d_val);
+bool operand_get_val(operand *this, bool *is_fp, int *i_val, double *d_val);
 
 /********************************** TEST API **********************************/
 
