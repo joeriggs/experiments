@@ -12,200 +12,110 @@
 #include <termios.h>
 #include <unistd.h>
 
+#include "common.h"
+
 #include "calculator.h"
+#include "list.h"
+#include "operand.h"
+#include "operator.h"
 #include "stack.h"
 
-/* Boolean type. */
-typedef enum { false, true }  bool;
+/* These define the types of objects that we'll store in the list. */
+#define LIST_OBJ_TYPE_OPERAND  1
+#define LIST_OBJ_TYPE_OPERATOR 2
+#define LIST_OBJ_TYPE_NONE     3
 
-/* Maximum supported sizes for the calculator. */
-#define MAX_INFIX_SIZE 1024
-#define MAX_POSTFIX_SIZE 1024
-
-/* ************************************************************************** */
-/* ************************************************************************** */
-
-/* This is the list of supported operators. */
-typedef struct operator {
-  const char value;
-  const char *name;
-  bool is_binary;
-} operator;
-static operator operators[] = {
-  { '+',  "ADD", true  }, // Addition
-  { '-',  "SUB", true  }, // Subtraction
-  { '*',  "MUL", true  }, // Multiplication
-  { '/',  "DIV", true  }, // Division
-  { '&',  "AND", true  }, // Bitwise AND
-  { '|',  "OR",  true  }, // Bitwise OR
-  { '^',  "XOR", true  }, // Bitwise XOR
-  { '~',  "NOT", false }, // Bitwise Negate
-  { '%',  "MOD", true  }, // Modulus
-  { '<',  "SHL", true  }, // Shift Left
-  { '>',  "SHR", true  }, // Shift Right
-  { 'l',  "ROL", true  }, // Rotate Left
-  { 'r',  "ROR", true  }, // Rotate Right
-  { 0, "", false }
-};
+/******************************************************************************
+ ****************************** CLASS DEFINITION ******************************
+ *****************************************************************************/
 
 /* This is the calculator class. */
 struct calculator {
-  char infix_str[MAX_INFIX_SIZE];
-  char postfix_str[MAX_POSTFIX_SIZE];
-  unsigned int allowed;
+  /* As we collect operands and operators, we store them on a list. */
+  list *infix_list;
+
+  /* We convert infix-to-postfix in this list. */
+  list *postfix_list;
+
+  /* A buffer that's used to build the console output. */
+  char console_buf[1024];
 };
   
-/* ************************************************************************** */
-/* ************************************************************************** */
-
-/* This function checks to see if a character is part of a numeric operand.  It
- * currently only supports decimal.
- *
- * Input:
- *   c - This is the character to check.
- *
- * Output:
- *   Returns true if the character is part of a numeric operator.
- *   Returns false if the character is NOT part of a numeric operator.
- */
-static bool is_operand(char c)
-{
-  bool retcode;
-
-  switch(c)
-  {
-  case '.':
-  case '0':
-  case '1':
-  case '2':
-  case '3':
-  case '4':
-  case '5':
-  case '6':
-  case '7':
-  case '8':
-  case '9':
-    retcode = true;
-    break;
-
-  default:
-    retcode = false;
-    break;
-  }
-
-  return retcode;
-}
-
-/* This function checks to see if the next thing in the equation is a binary
- * operator.  A binary operator requires 2 operands (ex. "1 + 2").
- *
- * Input:
- *   c - The character to check.  In our internal calculator, all operators are
- *       one character.
- *
- * Output:
- *   Returns an object that describes the operator.
- *   Returns 0 if str doesn't point to an operator.
- */
-static operator *is_binary_operator(char c)
-{
-  struct operator *retval = (struct operator *) 0;
-
-  int i;
-  for(i = 0; operators[i].value != 0; i++) {
-    if(c == operators[i].value) {
-      retval = &operators[i];
-      break;
-    }
-  }
-
-  return retval;
-}
-
-/* This function returns a value that represents the priority of an operator.
- *
- * Input:
- *   c - The operator to check.
- *
- * Output:
- *   Returns a numeric value that represents the relative priority of the
- *   operand.
- */
-static int
-operator_priority(char c)
-{
-  int retcode = 0;
-
-  switch(c) {
-  case '(': retcode = 0; break;
-  case '*': retcode = 2; break;
-  case '/': retcode = 2; break;
-  case '+': retcode = 1; break;
-  case '-': retcode = 1; break;
-  }
-
-  return retcode;
-}
+/******************************************************************************
+ ******************************** PRIVATE API *********************************
+ *****************************************************************************/
 
 /* This function evaluates the postfix equation and returns the result.
  *
  * Input:
- *   this = A pointer to the calculator object.
+ *   this = A pointer to the calculator object.  The postfix equation is
+ *          already stored in postfix_list.
  *
  * Output:
- *   0 = success.  The result is stored in the object.
- *   1 = failure.  No result is available.
+ *   true  = success.  The result is stored in the object.
+ *   false = failure.  No result is available.
  */
-static int
+static bool
 calculator_postfix(calculator *this)
 {
-  int retcode = 0;
-  int doing_operand = 0;
-  char operand_val = 0;
+  bool retcode = true;
 
-  int postfix_index = 0;
-  while(this->postfix_str[postfix_index]) {
-
-    char c = this->postfix_str[postfix_index++];
-
-    /* Skip white space. */
-    if(c == ' ') {
-      if(doing_operand)
-      {
-        push(operand_val);
-        doing_operand = 0;
-      }
-      continue;
-    }
-
-    /* Process operands. */
-    if(is_operand(c) == true) {
-      doing_operand = 1;
-      operand_val = (c - 0x30);
-      continue;
-    }
-
-    /* Everything else is an operator. */
-    else if(is_binary_operator(c) != (operator *) 0) {
-      char o1, o2;
-      pop(&o1);
-      pop(&o2);
-      switch(c)
-      {
-      case '+':
-        o1 += o2;
-        break;
-      case '*':
-        o1 *= o2;
-        break;
-      }
-      push(o1);
-    }
+  /* A stack to use while processing the postfix. */
+  stack *tmp_stack;
+  if((tmp_stack = stack_new()) == (stack *) 0)
+  {
+    printf("Unable to create postfix stack.\n");
   }
 
-  char result;
-  pop(&result);
-  printf("result = %d.\n", result);
+  else
+  {
+    /* These are used while processing the infix equation. */
+    void *cur_obj;
+    int type;
+    while(list_rem_head(this->postfix_list, &cur_obj, &type) == true)
+    {
+      /* Operands immediately go onto the stack. */
+      if(type == LIST_OBJ_TYPE_OPERAND)
+      {
+        stack_push(tmp_stack, cur_obj);
+      }
+
+      /* Operators are immediately processed. */
+      else if(type == LIST_OBJ_TYPE_OPERATOR)
+      {
+        operand *op1,  *op2;
+        stack_pop(tmp_stack, &op2);
+        stack_pop(tmp_stack, &op1);
+
+        if((retcode = operator_do_binary(cur_obj, op1, op2)) == false)
+        {
+          break;
+        }
+        stack_push(tmp_stack, op1);
+      }
+
+      else
+      {
+        printf("%s(): ERROR ERROR ERROR.\n", __func__);
+      }
+    }
+
+    /* If the equation was completed successful, then the result is on the
+     * stack.  Move it to the infix_list so we can start the next equation. */
+    if(retcode == true)
+    {
+      operand *result;
+      bool   is_fp;
+      int    i_val;
+      double f_val;
+      stack_pop(tmp_stack, &result);
+      operand_get_val(result, &is_fp, &i_val, &f_val);
+      list_add_tail(this->infix_list, result, LIST_OBJ_TYPE_OPERAND);
+    }
+
+    stack_delete(tmp_stack);
+  }
+
   return retcode;
 }
 
@@ -213,95 +123,181 @@ calculator_postfix(calculator *this)
  * to postfix.
  *
  * Input:
- *   this = A pointer to the calculator object.
+ *   this = A pointer to the calculator object.  The infix equation is already
+ *          stored in infix_list.
  *
  * Output:
- *   0 = success.  You can feed the postfix str into the postfix evaluator.
- *   1 = failure.
+ *   true = success.  You can feed the postfix list into the postfix evaluator.
+ *   false = failure.
  */
-static int
+static bool
 calculator_infix2postfix(calculator *this)
 {
-  int retcode = 0;
-  int infix_index = 0;
-  int postfix_index = 0;
+  bool retcode = true;
 
-  char a;
-
-  while(this->infix_str[infix_index]) {
-
-    char c = this->infix_str[infix_index];
-    infix_index++;
-
-    /* Skip white space. */
-    if(c == ' ') {
-      continue;
-    }
-
-    /* Process operands. */
-    if(is_operand(c) == true) {
-      this->postfix_str[postfix_index++] = c;
-      continue;
-    }
-
-    /* Processs open parentheses. */
-    if(c == '(') {
-      if(push(c)) {
-        printf("Line %d: Failed to push %c.\n", c, __LINE__);
-        return 1;
-      }
-    }
-
-    /* Process closing parentheses. */
-    else if(c == ')') {
-      while((peek(&a) == 0) && (a != '(')) {
-        if(pop(&a)) {
-          printf("Line %d: Failed to pop.\n", __LINE__);
-          return 1;
-        }
-
-        /* Add the operator to the postfix. */
-        this->postfix_str[postfix_index++] = ' ';
-        this->postfix_str[postfix_index++] = a;
-        this->postfix_str[postfix_index++] = ' ';
-      }
-
-      /* Pop off the opening parentheses. */
-      pop(&a);
-    }
-
-    /* Everything else is an operator. */
-    else if(is_binary_operator(c) != (operator *) 0) {
-      this->postfix_str[postfix_index++] = ' ';
-
-      /* Keep popping operators until you hit one that is a lower priority. */
-      while((peek(&a) == 0) && (operator_priority(a) >= operator_priority(c))) {
-        if(pop(&a)) {
-          printf("Line %d: Failed to pop.\n", __LINE__);
-          return 1;
-        }
-
-        /* Add the operator to the postfix. */
-        this->postfix_str[postfix_index++] = ' ';
-        this->postfix_str[postfix_index++] = a;
-        this->postfix_str[postfix_index++] = ' ';
-      }
-
-      /* Push the operator after we're done popping. */
-      if(push(c)) {
-        printf("Line %d: Failed to push.\n", __LINE__);
-        return 1;
-      }
-    }
+  /* A stack to use while converting infix to postfix. */
+  stack *tmp_stack;
+  if((tmp_stack = stack_new()) == (stack *) 0)
+  {
+    printf("Unable to create infix2postfix stack.\n");
+    retcode = false;
   }
 
-  /* When we're done, pop the rest of the stack and add it to the postfix. */
-  while(pop(&a) == 0) {
-    this->postfix_str[postfix_index++] = ' ';
-    this->postfix_str[postfix_index++] = a;
+  else
+  {
+    if((this->postfix_list = list_new()) == (list *) 0)
+    {
+      printf("Unable to create infix2postfix list.\n");
+      stack_delete(tmp_stack);
+      retcode = false;
+    }
+
+    else
+    {
+      /* Used while processing the infix equation. */
+      void *cur_obj;
+      int type;
+      operator *stk_operator;
+
+      while((retcode == true) && (list_rem_head(this->infix_list, &cur_obj, &type) == true))
+      {
+        /* Operands go straight to the postfix equation. */
+        if(type == LIST_OBJ_TYPE_OPERAND)
+        {
+          retcode = list_add_tail(this->postfix_list, cur_obj, LIST_OBJ_TYPE_OPERAND);
+          continue;
+        }
+
+        /* Operators are a little trickier. */
+        else if(type == LIST_OBJ_TYPE_OPERATOR)
+        {
+          operator *cur_operator = (operator *) cur_obj;
+
+          /* Keep popping operators until we encounter an operator that is a lower
+           * precedence or we hit the bottom of the stack. */
+          while(stack_peek(tmp_stack, &stk_operator) == true)
+          {
+            int cur_input, cur_stack;
+            int stk_input, stk_stack;
+            if( (operator_precedence(cur_operator, &cur_input, &cur_stack) == 0) &&
+                (operator_precedence(stk_operator, &stk_input, &stk_stack) == 0) )
+            {
+              if(stk_stack > cur_input)
+              {
+                break;
+              }
+
+              if(stack_pop(tmp_stack, &stk_operator) == false)
+              {
+                printf("Line %d: Failed to pop.\n", __LINE__);
+                break;
+              }
+
+              /* Add the operator to the postfix. */
+              retcode = list_add_tail(this->postfix_list, stk_operator, LIST_OBJ_TYPE_OPERATOR);
+            }
+            else
+            {
+              printf("Unable to get precedence information for operator(s).\n");
+              break;
+            }
+          }
+
+          /* Push the new operator after we're done popping. */
+          if(retcode == true)
+          {
+            retcode = stack_push(tmp_stack, cur_operator);
+          }
+        }
+
+        /* Unknown object type. */
+        else
+        {
+          printf("Unknown data type (%d).\n", type);
+        }
+      }
+
+      /* When we're done, pop the rest of the stack and add it to the postfix. */
+      while((retcode == true) && (stack_pop(tmp_stack, &stk_operator) == true))
+      {
+        retcode = list_add_tail(this->postfix_list, stk_operator, LIST_OBJ_TYPE_OPERATOR);
+      }
+    }
+
+    stack_delete(tmp_stack);
+
+    retcode = true;
   }
 
   return retcode;
+}
+
+/* This is the callback function for a list traversal.  When we want to create
+ * an ASCII string that contains the entire infix or postfix equation, we call
+ * the list::list_traverse() member, and it passes each operand/operator object
+ * to this member.  This member then builds a string that contains the ASCII
+ * equation.
+ *
+ * Input:
+ *   this_void = A pointer to the calculator object.
+ *
+ *   object    = An opaque value that represents an object.
+ *
+ *   type      = This defines what type of object is contained in object.  We
+ *               use the type to help us identify object.
+ *
+ * Output:
+ *   N/A.
+ */
+static void
+calculator_list_traverse_cb(const void *ctx,
+                            const void *object,
+                            int type)
+{
+  calculator *this = (calculator *) ctx;
+
+  if(this != (calculator *) 0)
+  {
+    size_t buf_len      = strlen(this->console_buf);
+    size_t buf_dst_max  = sizeof(this->console_buf) - buf_len;
+    char  *buf_dst      = &this->console_buf[buf_len];
+    bool   buf_is_empty = (buf_len == 0);
+
+    switch(type)
+    {
+      case LIST_OBJ_TYPE_OPERAND:
+        {
+          operand *cur_operand = (operand *) object;
+          bool   is_fp;
+          int    i_val;
+          double f_val;
+          operand_get_val(cur_operand, &is_fp, &i_val, &f_val);
+
+          if(is_fp)
+          {
+            snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%f" : " %f", f_val);
+          }
+          else
+          {
+            snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%d" : " %d", i_val);
+          }
+        }
+        break;
+
+      case LIST_OBJ_TYPE_OPERATOR:
+        {
+          operator *cur_operator = (operator *) object;
+          const char *op_name;
+          operator_get_name(cur_operator, &op_name);
+          snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%s" : " %s", op_name);
+        }
+        break;
+
+      default:
+        printf("UNKNOWN: \n");
+        break;
+    }
+  }
 }
 
 /******************************************************************************
@@ -322,57 +318,189 @@ calculator *
 calculator_new(void)
 {
   calculator *this = malloc(sizeof(*this));
+
+  /* Initialize. */
+  if(this != (calculator *) 0)
+  {
+    if((this->infix_list = list_new()) == (list *) 0)
+    {
+      free(this);
+      this = (calculator *) 0;
+    }
+  }
+
   return this;
 }
 
+/* Delete a calculator object that was created by calculator_new().
+ *
+ * Input:
+ *   this = A pointer to the calculator object.
+ *
+ * Output:
+ *   Returns 0 if successful.
+ *   Returns 1 if not successful.
+ */
+bool
+calculator_delete(calculator *this)
+{
+  bool retcode = false;
+
+  if(this != (calculator *) 0)
+  {
+    list_delete(this->infix_list);
+
+    free(this);
+    retcode = true;
+  }
+
+  return retcode;
+}
 
 /* Add a character to the current equation.  As the user enters their equation
  * the data is passed to the calculator object via this member.
  *
  * Input:
  *   this = A pointer to the calculator object.
+ *
  *   c = The character to add.  Note that we only support 8-bit characters.
  *
  * Output:
- *   Returns a pointer the current value that should be displayed on the
- *   calculator's screen.
+ *   Returns true for success.  The character was added to the equation.
+ *   Returns false if the character wasn't processed.
  */
-const char *
+bool
 calculator_add_char(calculator *this,
                     const char c)
 {
-  int curlen = strlen(this->infix_str);
+  bool retcode = true;
 
   switch(c)
   {
     /* Backspace. */
     case 0x7F:
     case 0x08:
-      if(curlen > 0)
-      {
-        this->infix_str[curlen - 1] = 0;
-      }
+      list_del_tail(this->infix_list);
       break;
 
     case '=':
+      if((retcode = calculator_infix2postfix(this)) == true)
       {
-        bool res = calculator_infix2postfix(this);
-        calculator_postfix(this);
+        retcode = calculator_postfix(this);
       }
       break;
 
     default:
       {
-        if(curlen < sizeof(this->infix_str) - 1)
+        /* Get the last operator/operand object that we processed. */
+        void *obj = (void *) 0;
+        int type = LIST_OBJ_TYPE_NONE;
+        list_get_tail(this->infix_list, &obj, &type);
+
+        /* If the most recent operand/operator object from the end of the
+         * infix list isn't an operand, create a new operand object now. */
+        operand *cur_operand = (type == LIST_OBJ_TYPE_OPERAND) ? obj : operand_new();
+
+        /* Try to add the current character as an operand. */
+        if(operand_add_char(cur_operand, c) == 0)
         {
-          this->infix_str[curlen] = c;
-          calculator_infix2postfix(this);
-          printf("\n%c -> %s\n", c, this->postfix_str);
+          /* If we just created a new operand object, add it to the list. */
+          if(cur_operand != obj)
+          {
+            if(list_add_tail(this->infix_list, cur_operand, LIST_OBJ_TYPE_OPERAND) == false)
+            {
+              operand_delete(cur_operand);
+            }
+          }
+        }
+
+        /* If it's not an operand, then it's an operator. */
+        else
+        {
+          operator *cur_operator = operator_new(c);
+          if(cur_operator != (operator *) 0)
+          {
+            if(list_add_tail(this->infix_list, cur_operator, LIST_OBJ_TYPE_OPERATOR) == false)
+            {
+              /* Unable to add the operand to the list. */
+              retcode = false;
+            }
+          }
         }
       }
       break;
   }
 
-  return this->infix_str;
+  return retcode;
 }
+
+/* This member will create an ASCII string that represents the value that
+ * should be displayed by the calculator.
+ *
+ * Input:
+ *   this     = A pointer to the calculator object.
+ *
+ *   buf      = The caller-supplied buffer that will receive the message.
+ *
+ *   buf_size = An int that specifies the size of buf.  This function will only
+ *              place up to (buf_size - 1) characters in the buffer, allowing
+ *              one byte for the NULL terminator.  If the entire string would
+ *              be longer than (buf_size - 1), then the END of the string will
+ *              be placed in the buffer.  This gives the illusion of a message
+ *              that is scrolling horizontally.
+ *
+ * Output:
+ *   Returns true for success.  The message was created and placed in buf.
+ *   Returns false if an error occurs.  The contents of buf is undefined.
+ */
+bool
+calculator_get_console(calculator *this,
+                       char *buf,
+                       size_t buf_size)
+{
+  bool retcode = false;
+
+  if(this != (calculator *) 0)
+  {
+    memset(this->console_buf, 0, sizeof(this->console_buf));
+    list_traverse(this->infix_list, calculator_list_traverse_cb, this);
+
+    /* Pass it back to the caller. */
+    if(strlen(this->console_buf) > (buf_size - 1))
+    {
+      /* Allow room for the NULL terminator. */
+      char *p = this->console_buf + (strlen(this->console_buf) - (buf_size - 1));
+      memcpy(buf, p, (buf_size - 1));
+      buf[buf_size - 1] = 0;
+    }
+    else
+    {
+      strcpy(buf, this->console_buf);
+    }
+  }
+
+  return retcode;
+}
+
+/******************************************************************************
+ ********************************** TEST API **********************************
+ *****************************************************************************/
+
+#if defined(TEST)
+bool
+calculator_test(void)
+{
+  bool retcode = false;
+
+  calculator *this = calculator_new();
+  if(this != (calculator *) 0)
+  {
+    list_print(this->infix_list, calculator_list_traverse_cb, this);
+    calculator_delete(this);
+    retcode = true;
+  }
+
+  return retcode;
+}
+#endif // TEST
 

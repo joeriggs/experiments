@@ -2,7 +2,7 @@
  * program can read keyboard input one character at a time as it is being
  * entered by the user.  It makes for better user interaction.
  */
-
+#include <fcntl.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
@@ -25,7 +25,7 @@ raw_stdin *raw_stdin_new(void)
   this->new = this->org;
   this->new.c_lflag &= ~(ICANON | ECHO);
   tcsetattr(STDIN_FILENO, TCSANOW, &this->new);
-  this->fd = open("/dev/stdin");
+  this->fd = open("/dev/stdin", O_RDONLY);
 
   return this;
 }

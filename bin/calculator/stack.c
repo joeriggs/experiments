@@ -4,97 +4,211 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include "common.h"
+
 #include "stack.h"
 
 /* Set a max size for the stack.  We don't want uncontrolled growth. */
 #define STACK_DEPTH_MAX 4096
-static char  *stack = (char *) 0;
-static int    stack_index = -1;
-static size_t stack_depth = 0;
 
-/* Push a single character onto the stack.
+/******************************************************************************
+ ****************************** CLASS DEFINITION ******************************
+ *****************************************************************************/
+
+/* This is the operand class. */
+struct stack {
+  int   *stack_data;
+  int    stack_index;
+  size_t stack_depth;
+};
+  
+/******************************************************************************
+ ******************************** PRIVATE API *********************************
+ *****************************************************************************/
+
+/******************************************************************************
+ ********************************* PUBLIC API *********************************
+ *****************************************************************************/
+
+/* Create a new stack object.  This object can be used to access the stack
+ * class.
  *
  * Input:
- *   c = The character to push.
+ *   N/A.
  *
  * Output:
- *   Returns 0 if success.  c is on the top of the stack.
- *   Returns 1 if failure.  The stack is unchanged.
+ *   Returns a pointer to the object.
+ *   Returns 0 if unable to create the object.
  */
-int push(char c)
+stack *
+stack_new(void)
 {
+  stack *this = malloc(sizeof(*this));
+
+  if(this != (stack *) 0)
+  {
+    this->stack_data  = (void *) 0;
+    this->stack_index = -1;
+    this->stack_depth = 0;
+  }
+
+  return this;
+}
+
+/* Delete a stack object that was created by stack_new().
+ *
+ * Input:
+ *   this = A pointer to the stack object.
+ *
+ * Output:
+ *   Returns 0 if successful.
+ *   Returns 1 if not successful.
+ */
+bool
+stack_delete(stack *this)
+{
+  bool retcode = false;
+
+  if(this != (stack *) 0)
+  {
+    if(this->stack_data != (void *) 0)
+    {
+      free(this->stack_data);
+    }
+
+    free(this);
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+/* Push a single int onto the stack.
+ *
+ * Input:
+ *   this = A pointer to the stack object.
+ *
+ *   i    = The value to push.
+ *
+ * Output:
+ *   Returns true if success.  i is on the top of the stack.
+ *   Returns false if failure.  The stack is unchanged.
+ */
+bool stack_push(stack *this,
+                void *i)
+{
+  bool retcode = true;
+
   /* If the stack is full, grow it. */
-  if((stack_index + 1) == stack_depth) {
+  if((this->stack_index + 1) == this->stack_depth) {
     /* If the stack is at full size, return an error. */
-    if(stack_depth >= STACK_DEPTH_MAX) {
+    if(this->stack_depth >= STACK_DEPTH_MAX) {
       printf("Stack is full.  Failing to push.\n");
-      return 1;
+      retcode = false;
     }
 
     /* If this is the first push allocate the first stack. */
-    if(stack == (char *) 0) {
-      stack_depth = 1;
-      stack = (char *) malloc(stack_depth);
+    else if(this->stack_data == (int *) 0) {
+      this->stack_depth = 1;
+      this->stack_data = (int *) malloc(this->stack_depth * sizeof(int));
     }
 
     /* We already have a stack.  We need to grow it.  So we'll double it. */
     else {
-      stack_depth = stack_depth << 1;
-      stack = realloc(stack, stack_depth);
+      this->stack_depth = this->stack_depth << 1;
+      this->stack_data = realloc(this->stack_data, this->stack_depth * sizeof(int));
     }
 
     /* If we don't have a stack, fail now. */
-    if(stack == (char *) 0) {
+    if(this->stack_data == (int *) 0) {
       printf("We don't have a stack.\n");
-      return 1;
+      retcode = false;
     }
   }
 
-  /* Save the value on the stack. */
-  stack_index++;
-  stack[stack_index] = c;
-
-  return 0;
-}
-
-/* Pop a single character from the stack.
- *
- * Input:
- *   c = Pointer to the location to pop into.
- *
- * Output:
- *   Returns 0 if success.  c contains the character from the top.  It is popped.
- *   Returns 1 if failure.  The stack is empty.
- */
-int pop(char *c)
-{
-  if(stack_index == -1) {
-    return 1;
+  /* If we have a stack, save the value on the stack. */
+  if(retcode == true)
+  {
+    this->stack_index++;
+    this->stack_data[this->stack_index] = (int) i;
   }
 
-  *c = stack[stack_index];
-  stack_index--;
-
-  return 0;
+  return retcode;
 }
 
-/* Peek at the top character on the stack.
+/* Pop a single int from the stack.
  *
  * Input:
- *   c = Pointer to the location to pop into.
+ *   this = A pointer to the stack object.
+ *
+ *   i    = Pointer to the location to pop into.
  *
  * Output:
- *   Returns 0 if success.  c contains the character from the top.  It is popped.
- *   Returns 1 if failure.  The stack is empty.
+ *   true  = success.  i contains the int from the top.  It is popped.
+ *   false = failure.  The stack is empty.
  */
-int peek(char *c)
+bool
+stack_pop(stack *this,
+          void *i)
 {
-  if(stack_index == -1) {
-    return 1;
+  bool retcode = false;
+
+  if(this->stack_index >= 0) {
+    int *val = (int *) i;
+    *val = (int) this->stack_data[this->stack_index--];
+    retcode = true;
   }
 
-  *c = stack[stack_index];
-
-  return 0;
+  return retcode;
 }
+
+/* Peek at the top int on the stack.
+ *
+ * Input:
+ *   this = A pointer to the stack object.
+ *
+ *   i    = Pointer to the location to pop into.
+ *
+ * Output:
+ *   Returns 0 if success.  i contains the int from the top.  It is NOT popped.
+ *   Returns 1 if failure.  The stack is empty.
+ */
+bool
+stack_peek(stack *this,
+           void *i)
+{
+  bool retcode = false;
+
+  if(this->stack_index >= 0)
+  {
+    int *val = (int *) i;
+    *val = this->stack_data[this->stack_index];
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+/******************************************************************************
+ ********************************** TEST API **********************************
+ *****************************************************************************/
+
+#ifdef TEST
+
+bool
+stack_test(void)
+{
+  bool retcode = false;
+
+  stack *this = stack_new();
+  if(this != (stack *) 0)
+  {
+    stack_delete(this);
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+#endif // TEST
 

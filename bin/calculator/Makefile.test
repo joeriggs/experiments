@@ -1,0 +1,13 @@
+
+OBJ := test.o calculator.o list.o operand.o operator.o raw_stdin.o stack.o
+
+TARGET := test
+
+%.o: %.c
+	gcc -DTEST -Wall -Werror -c -o $@ $<
+
+$(TARGET): $(OBJ)
+
+clean:
+	rm -f $(OBJ) $(TARGET)
+
