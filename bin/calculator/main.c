@@ -12,88 +12,166 @@
 #include "calculator.h"
 #include "raw_stdin.h"
 
+/* This is the help message.
+ *
+ * Input:
+ *   N/A.
+ *
+ * Output:
+ *   N/A.
+ */
+static void
+display_help(void)
+{
+  fprintf(stderr, "\n"
+    "This is a simple text-based math calculator.\n"
+    "\n"
+    "The commands are:\n"
+    " h - Display this help message.\n"
+    " q - Quit the program.\n"
+    " m - Toggle Decimal and Hexadecimal mode.\n"
+    "\n"
+    "The supported operators are:\n"
+    " + - Addition\n"
+    " - - Subtraction\n"
+    " * - Multiplication\n"
+    " / - Division\n"
+    " ^ - Exponentiation.  Right to left associative.  2^3^3 = 2^(3^3).\n"
+  );
+}
+
+/* This function updates the calculator display.
+ *
+ * Input:
+ *   this = A pointer to the calculator object.
+ *
+ * Output:
+ *   true  = Success.  The calculator display is updated.
+ *   false = Failure.  The calculator display is NOT updated.
+ */
+static bool
+display_calc(calculator *calc)
+{
+  bool retcode = false;
+
+  char   calc_obj_buf[33];
+  size_t calc_obj_buf_size = sizeof(calc_obj_buf);
+
+  /* If the caller passes us a NULL calculator object, then display an error
+   * message.  Otherwise get the console data from the calculator object. */
+  if(calc == (calculator *) 0)
+  {
+    snprintf(calc_obj_buf, (sizeof(calc_obj_buf) - 1), "ERROR");
+  }
+  else
+  {
+    calculator_get_console(calc, calc_obj_buf, sizeof(calc_obj_buf));
+  }
+
+  /* Now stretch/shrink the console data to fit the calculator's display. */
+  char calc_dsp_buf[33];
+  size_t calc_dsp_buf_size = sizeof(calc_dsp_buf);
+  if(strlen(calc_obj_buf) < (calc_dsp_buf_size - 1))
+  {
+    /* Initialize the buffer with all spaces.  Then NULL terminate. */
+    memset(calc_dsp_buf, ' ', calc_dsp_buf_size);
+    calc_dsp_buf[calc_dsp_buf_size - 1] = 0;
+
+    /* Now copy the calc_obj data to the end of the calc_dsp buffer. */
+    int calc_dsp_buf_index = (calc_dsp_buf_size - 1 - strlen(calc_obj_buf));
+    memcpy(&calc_dsp_buf[calc_dsp_buf_index], calc_obj_buf, strlen(calc_obj_buf));
+  }
+  else
+  {
+    memcpy(calc_dsp_buf, calc_obj_buf, calc_obj_buf_size);
+  }
+
+  /* Get the hex/dec setting. */
+  char   base_str[16];
+  size_t base_str_max = (sizeof(base_str) - 1);
+  calculator_base base;
+  if(calculator_get_base(calc, &base) == true)
+  {
+    switch(base)
+    {
+    case calculator_base_10: strncpy(base_str, "dec", base_str_max); break;
+    case calculator_base_16: strncpy(base_str, "hex", base_str_max); break;
+    default:                 strncpy(base_str, "!!!", base_str_max); break;
+    }
+  }
+  else
+  {
+    strncpy(base_str, "???", base_str_max);
+  }
+
+  /* Display our calculator output. */
+  char calc_buf[64];
+  snprintf(calc_buf, sizeof(calc_buf), "\r-- %s -->%s<--\b\b\b\b", base_str, calc_dsp_buf);
+  fprintf(stderr, calc_buf);
+
+  retcode = true;
+
+  return retcode;
+}
+
 int main(int argc, char **argv)
 {
-  /* Create an object that will allow us to read raw console input. */
+  /* Create a console object.  We will use it to read raw console input. */
   raw_stdin *console = raw_stdin_new();
   if(console != (raw_stdin *) 0)
   {
-    /* This will hold the calculator object.  We create it inside the while()
-     * loop because we will need to kill and recreate it if an internal error
-     * occurs (such as a divide by zero). */
-    calculator *calc = (calculator *) 0;
-
-    fprintf(stderr, "Type an equation.\n");
-    fprintf(stderr, "Type 'q' to quit.\n");
-    fprintf(stderr, "-->                                <--\b\b\b\b");
-    bool done = false;
-
-    while(done == false)
-    {
-      /* Create a calculator object if one doesn't currently exist.  Note that
-       * we delete the calculator object if an error occurs, but we don't
-       * terminate the calculator program.  We recover and continue. */
-      if( (calc == (calculator *) 0) && ((calc = calculator_new()) == (calculator *) 0) )
-      {
-        /* If we fail to create a calculator object, loop around and try again.
-         * Don't ever fail and give up. */
-        continue;
-      }
-
-      char c = raw_stdin_getchar(console);
-      switch(c)
-      {
-      case 'q':
-        done = 1;
-        break;
-
-      default:
-        {
-          char   calc_buf[33];
-          size_t calc_buf_size = sizeof(calc_buf);
-          if(calculator_add_char(calc, c) == false)
-          {
-            snprintf(calc_buf, (sizeof(calc_buf) - 1), "ERROR");
-
-            /* If the calculator object fails for any reason, delete it and
-             * create a new one.  The most likely cause of failure would be a
-             * divide by zero. */
-            calculator_delete(calc);
-            calc = (calculator *) 0;
-          }
-          else
-          {
-            calculator_get_console(calc, calc_buf, sizeof(calc_buf));
-          }
-
-          char buf2[33];
-          if(strlen(calc_buf) < (calc_buf_size - 1))
-          {
-            memset(buf2, ' ', sizeof(buf2));
-            buf2[sizeof(buf2) - 1] = 0;
-            memcpy(buf2 + (sizeof(buf2) - 1 - strlen(calc_buf)), calc_buf, strlen(calc_buf));
-          }
-          else
-          {
-            memcpy(buf2, calc_buf, sizeof(calc_buf));
-          }
-
-          char buf3[64];
-          snprintf(buf3, sizeof(buf3), "\r-->%s<--\b\b\b\b", buf2);
-          fprintf(stderr, buf3);
-        }
-        break;
-      }
-    }
-
+    /* Create a calculator object. */
+    calculator *calc = calculator_new();
     if(calc != (calculator *) 0)
     {
+      fprintf(stderr, "Enter an equation.  'h' for help.\n");
+      display_calc(calc);
+
+      bool done = false;
+      while(done == false)
+      {
+        char c = raw_stdin_getchar(console);
+        switch(c)
+        {
+        case 'h':
+          display_help();
+          break;
+
+        case 'm':
+          {
+            calculator_base cur_base;
+            calculator_base new_base;
+            if(calculator_get_base(calc, &cur_base) == true)
+            {
+              switch(cur_base)
+              {
+              case calculator_base_10: new_base = calculator_base_16; break;
+              case calculator_base_16: new_base = calculator_base_10; break;
+              default:                 new_base = calculator_base_10; break;
+              }
+
+              calculator_set_base(calc, new_base);
+            }
+          }
+          break;
+
+        case 'q':
+          done = true;
+          break;
+
+        default:
+          calculator_add_char(calc, c);
+          break;
+        }
+
+        display_calc(calc);
+      }
+
       calculator_delete(calc);
     }
 
-
     raw_stdin_free(console);
-    printf("Bye.\n");
+    printf("\nBye.\n");
   }
 
   else

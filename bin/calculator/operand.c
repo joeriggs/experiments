@@ -19,30 +19,15 @@ struct operand {
   double d_val;
   bool   got_decimal_point;
   double fp_multiplier;
+
+  /* The number system we're currently configured to use.  The allowed settings
+   * are currently base_10 and base_16. */
+  operand_base base;
 };
   
 /******************************************************************************
  ******************************** PRIVATE API *********************************
  *****************************************************************************/
-
-/* This function checks to see if a character is part of a numeric operand.  It
- * currently only supports decimal.
- *
- * Input:
- *   this = A pointer to the operand object.
- *
- *   c - This is the character to check.
- *
- * Output:
- *   Returns true if the character is part of a numeric operand.
- *   Returns false if the character is NOT part of a numeric operand.
- */
-static bool
-operand_is_valid(operand *this,
-                 char c)
-{
-  return ((c >= '0') && (c <= '9')) ? true : false;
-}
 
 /******************************************************************************
  ********************************* PUBLIC API *********************************
@@ -274,14 +259,14 @@ operand_op_exp(operand *op1,
  * class.
  *
  * Input:
- *   N/A.
+ *   base = The number base (base_10 or base_16) to use.
  *
  * Output:
  *   Returns a pointer to the object.
  *   Returns 0 if unable to create the object.
  */
 operand *
-operand_new(void)
+operand_new(operand_base base)
 {
   operand *this = malloc(sizeof(*this));
 
@@ -290,6 +275,7 @@ operand_new(void)
     this->i_val             = 0;
     this->d_val             = 0.0;
     this->got_decimal_point = false;
+    this->base              = base;
   }
 
   return this;
@@ -318,6 +304,99 @@ operand_delete(operand *this)
   return retcode;
 }
 
+/* Get the current number base that the operand is configured for.
+ *
+ * The current allowed bases are base_10 (decimal) and base_16 (hexadecimal).
+ *
+ * Input:
+ *   this = A pointer to the operand object.
+ *
+ *   base = A pointer to a variable that is set to the current base.
+ *
+ * Output:
+ *   true  = success.  *base = the current base.
+ *   false = failure.  *base = operand_base_unknown.
+ */
+bool
+operand_get_base(operand *this,
+                 operand_base *base)
+{
+  bool retcode = false;
+
+  /* Check parameters and pick a reasonable default answer. */
+  if(base != (operand_base *) 0)
+  {
+    if(this != (operand *) 0)
+    {
+      *base = this->base;
+      retcode = true;
+    }
+    else
+    {
+      *base = operand_base_unknown;
+    }
+  }
+
+  return retcode;
+}
+
+/* Set the number base that the operand should use.
+ *
+ * The current allowed bases are base_10 (decimal) and base_16 (hexadecimal).
+ *
+ * Input:
+ *   this = A pointer to the operand object.
+ *
+ *   base = The new base that we should set.
+ *
+ * Output:
+ *   true  = success.  The operand is now using the new base.
+ *   false = failure.  The operand is NOT using the new base.  State unknown.
+ */
+bool
+operand_set_base(operand *this,
+                 operand_base base)
+{
+  bool retcode = false;
+
+  if(this != (operand *) 0)
+  {
+    if(this->base != base)
+    {
+      switch(base)
+      {
+      case operand_base_10:
+        if(this->base == operand_base_16)
+        {
+          this->got_decimal_point = false;
+        }
+        this->base = base;
+        retcode = true;
+        break;
+      
+      case operand_base_16:
+        if(this->base == operand_base_10)
+        {
+          if(this->got_decimal_point == true)
+          {
+            this->i_val = this->d_val;
+            this->got_decimal_point = false;
+            this->d_val = 0.0;
+          }
+        }
+        this->base = base;
+        retcode = true;
+        break;
+
+      default:
+        /* We will return false. */
+        break;
+      }
+    }
+  }
+
+  return retcode;
+}
 /* Attempt to add a character to an existing operand object.  The character is
  * first checked to see if it's a valid part of an operand.  If it's valid, it
  * is added.
@@ -328,36 +407,24 @@ operand_delete(operand *this)
  *   c = The character to add.  Note that it might not be a valid operand.
  *
  * Output:
- *   Returns 0 if c is part of an operand and it was added to this.
- *   Returns 1 if c is NOT an operand OR unable to add c to this.
+ *   true  = c is part of an operand and it was added to this.
+ *   false = c is NOT an operand OR unable to add c to this.
  */
-int
+bool
 operand_add_char(operand *this,
                  char c)
 {
-  int retval = 1;
+  bool retcode = false;
 
-  /* Check to see if the character is a valid part of an operand.  If it is,
-   * add it. */
-  if(operand_is_valid(this, c) == true)
+  /* Get the base (base_10 or base_16) for the operand. */
+  operand_base base;
+  if(operand_get_base(this, &base) == false)
   {
-    if(this->got_decimal_point == true)
-    {
-      double f = c - '0';
-      f *= this->fp_multiplier;
-      this->d_val += f;
-      this->fp_multiplier /= 10.0;
-    }
-    else
-    {
-      this->i_val = (this->i_val * 10) + (c - '0');
-    }
-
-    retval = 0;
+    base = operand_base_10;
   }
-
+  
   /* If it's a decimal point, prepare to start doing decimal math. */
-  else if(c == '.')
+  if((base == operand_base_10) && (c == '.'))
   {
     if(this->got_decimal_point == false)
     {
@@ -367,10 +434,53 @@ operand_add_char(operand *this,
       this->fp_multiplier = 0.10;
     }
 
-    retval = 0;
+    retcode = true;
   }
 
-  return retval;
+  /* Not a decimal point.  It better be a digit. */
+  else
+  {
+    /* If it's an ASCII digit, convert it to a binary. */
+    unsigned char c_val = 0xFF;
+    if((c >= '0') && (c <= '9'))
+    {
+      c_val = c - '0';
+    }
+    else if( (base == operand_base_16) && (((c & 0xDF) >= 'A') && ((c & 0xDF) <= 'F')) )
+    {
+      c_val = (c & 0xDF) - 0x37;
+    }
+
+    /* Is it as a digit?  If it is, then add it to the current value. */
+    if(c_val != 0xFF)
+    {
+      switch(base)
+      {
+      case operand_base_16:
+        this->i_val = (this->i_val * 16) + c_val;
+        break;
+
+      case operand_base_10:
+      default:
+        if(this->got_decimal_point == true)
+        {
+          double f = c_val;
+          f *= this->fp_multiplier;
+          this->d_val += f;
+          this->fp_multiplier /= 10.0;
+        }
+        else
+        {
+          this->i_val = (this->i_val * 10) + c_val;
+        }
+        break;
+      }
+
+      retcode = true;
+    }
+  }
+
+  return retcode;
 }
 
 /* Return the current value of the specified operand object.

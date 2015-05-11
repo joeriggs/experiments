@@ -39,6 +39,10 @@ struct calculator {
 
   /* A buffer that's used to build the console output. */
   char console_buf[1024];
+
+  /* The number system we're currently configured to use.  The allowed settings
+   * are currently base_10 and base_16. */
+  calculator_base base;
 };
   
 /******************************************************************************
@@ -250,9 +254,9 @@ calculator_infix2postfix(calculator *this)
  *   N/A.
  */
 static void
-calculator_list_traverse_cb(const void *ctx,
-                            const void *object,
-                            int type)
+calculator_get_console_trv_cb(const void *ctx,
+                              const void *object,
+                              int type)
 {
   calculator *this = (calculator *) ctx;
 
@@ -279,7 +283,21 @@ calculator_list_traverse_cb(const void *ctx,
           }
           else
           {
-            snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%d" : " %d", i_val);
+            calculator_base base;
+            if(calculator_get_base(this, &base) == false)
+            {
+              base = calculator_base_10;
+            }
+            if(base == calculator_base_16)
+            {
+              snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%X" : " %X", i_val);
+            }
+
+            /* Default to base 10. */
+            else
+            {
+              snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%d" : " %d", i_val);
+            }
           }
         }
         break;
@@ -296,6 +314,61 @@ calculator_list_traverse_cb(const void *ctx,
       default:
         printf("UNKNOWN: \n");
         break;
+    }
+  }
+}
+
+/* This is the callback function for a list traversal.  When the user switches
+ * the calculator base (for example, switching from base10 to base16), we need
+ * to walk through the current infix and postfix data and convert each of the
+ * operands.  We use the list::list_traverse() member to walk the lists, and it
+ * psses each operand/operator object to this member.  This member then tells
+ * the operand class to convert each operand.
+ *
+ * Input:
+ *   this_void = A pointer to the calculator object.
+ *
+ *   object    = An opaque value that represents an object.
+ *
+ *   type      = This defines what type of object is contained in object.  We
+ *               use the type to help us identify object.
+ *
+ * Output:
+ *   N/A.
+ */
+static void
+calculator_set_base_trv_cb(const void *ctx,
+                           const void *object,
+                           int type)
+{
+  calculator *this = (calculator *) ctx;
+
+  if(this != (calculator *) 0)
+  {
+    if(type == LIST_OBJ_TYPE_OPERAND)
+    {
+      operand *cur_operand = (operand *) object;
+
+      /* If we need to convert this operand to a different base, do it now. */
+      operand_base cur_base;
+      if(operand_get_base(cur_operand, &cur_base) == true)
+      {
+        if( (this->base == calculator_base_10) && (cur_base != operand_base_10) )
+        {
+          if(operand_set_base(cur_operand, operand_base_10) == false)
+          {
+          }
+        }
+        else if( (this->base == calculator_base_16) && (cur_base != operand_base_16) )
+        {
+          if(operand_set_base(cur_operand, operand_base_16) == false)
+          {
+          }
+        }
+      }
+      else
+      {
+      }
     }
   }
 }
@@ -322,6 +395,9 @@ calculator_new(void)
   /* Initialize. */
   if(this != (calculator *) 0)
   {
+    /* Default is decimal (base_10). */
+    this->base = calculator_base_10;
+
     if((this->infix_list = list_new()) == (list *) 0)
     {
       free(this);
@@ -338,8 +414,8 @@ calculator_new(void)
  *   this = A pointer to the calculator object.
  *
  * Output:
- *   Returns 0 if successful.
- *   Returns 1 if not successful.
+ *   true  = success.
+ *   false = failure.
  */
 bool
 calculator_delete(calculator *this)
@@ -352,6 +428,81 @@ calculator_delete(calculator *this)
 
     free(this);
     retcode = true;
+  }
+
+  return retcode;
+}
+
+/* Get the current number base that the calculator is configured for.
+ *
+ * The current allowed bases are base_10 (decimal) and base_16 (hexadecimal).
+ *
+ * Input:
+ *   this = A pointer to the calculator object.
+ *
+ *   base = A pointer to a variable that is set to the current base.
+ *
+ * Output:
+ *   true  = success.  *base = the current base.
+ *   false = failure.  *base = calculator_base_unknown.
+ */
+bool
+calculator_get_base(calculator *this,
+                    calculator_base *base)
+{
+  bool retcode = false;
+
+  /* Check parameters and pick a reasonable default answer. */
+  if(base != (calculator_base *) 0)
+  {
+    if(this != (calculator *) 0)
+    {
+      *base = this->base;
+      retcode = true;
+    }
+    else
+    {
+      *base = calculator_base_unknown;
+    }
+  }
+
+  return retcode;
+}
+
+/* Set the number base that the calculator should use.
+ *
+ * The current allowed bases are base_10 (decimal) and base_16 (hexadecimal).
+ *
+ * Input:
+ *   this = A pointer to the calculator object.
+ *
+ *   base = The new base that we should set.
+ *
+ * Output:
+ *   true  = success.  The calculator is now using the new base.
+ *   false = failure.  The calculator is NOT using the new base.  State unknown.
+ */
+bool
+calculator_set_base(calculator *this,
+                    calculator_base base)
+{
+  bool retcode = false;
+
+  if(this != (calculator *) 0)
+  {
+    switch(base)
+    {
+    case calculator_base_10:
+    case calculator_base_16:
+      this->base = base;
+      list_traverse(this->infix_list, calculator_set_base_trv_cb, this);
+
+      retcode = true;
+      break;
+
+    default:
+      break;
+    }
   }
 
   return retcode;
@@ -399,10 +550,10 @@ calculator_add_char(calculator *this,
 
         /* If the most recent operand/operator object from the end of the
          * infix list isn't an operand, create a new operand object now. */
-        operand *cur_operand = (type == LIST_OBJ_TYPE_OPERAND) ? obj : operand_new();
+        operand *cur_operand = (type == LIST_OBJ_TYPE_OPERAND) ? obj : operand_new(this->base);
 
         /* Try to add the current character as an operand. */
-        if(operand_add_char(cur_operand, c) == 0)
+        if(operand_add_char(cur_operand, c) == true)
         {
           /* If we just created a new operand object, add it to the list. */
           if(cur_operand != obj)
@@ -463,7 +614,7 @@ calculator_get_console(calculator *this,
   if(this != (calculator *) 0)
   {
     memset(this->console_buf, 0, sizeof(this->console_buf));
-    list_traverse(this->infix_list, calculator_list_traverse_cb, this);
+    list_traverse(this->infix_list, calculator_get_console_trv_cb, this);
 
     /* Pass it back to the caller. */
     if(strlen(this->console_buf) > (buf_size - 1))
@@ -495,7 +646,7 @@ calculator_test(void)
   calculator *this = calculator_new();
   if(this != (calculator *) 0)
   {
-    list_print(this->infix_list, calculator_list_traverse_cb, this);
+    list_print(this->infix_list, calculator_get_console_trv_cb, this);
     calculator_delete(this);
     retcode = true;
   }

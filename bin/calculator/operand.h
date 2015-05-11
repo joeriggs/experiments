@@ -4,6 +4,12 @@
 
 /****************************** CLASS DEFINITION ******************************/
 
+typedef enum {
+  operand_base_10,
+  operand_base_16,
+  operand_base_unknown
+} operand_base;
+
 typedef struct operand operand;
 
 /********************************* PUBLIC OPS *********************************/
@@ -18,11 +24,15 @@ bool operand_op_exp(operand *op1, operand *op2);
 
 /********************************* PUBLIC API *********************************/
 
-operand *operand_new(void);
+operand *operand_new(operand_base base);
 
 bool operand_delete(operand *this);
 
-int operand_add_char(operand *this, char c);
+bool operand_get_base(operand *this, operand_base *base);
+
+bool operand_set_base(operand *this, operand_base base);
+
+bool operand_add_char(operand *this, char c);
 
 bool operand_get_val(operand *this, bool *is_fp, int *i_val, double *d_val);
 
