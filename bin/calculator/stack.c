@@ -3,6 +3,7 @@
  */
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "common.h"
 
@@ -17,7 +18,7 @@
 
 /* This is the operand class. */
 struct stack {
-  int   *stack_data;
+  void **stack_data;
   int    stack_index;
   size_t stack_depth;
 };
@@ -94,8 +95,9 @@ stack_delete(stack *this)
  *   Returns true if success.  i is on the top of the stack.
  *   Returns false if failure.  The stack is unchanged.
  */
-bool stack_push(stack *this,
-                void *i)
+bool
+stack_push(stack *this,
+           void *i)
 {
   bool retcode = true;
 
@@ -108,9 +110,9 @@ bool stack_push(stack *this,
     }
 
     /* If this is the first push allocate the first stack. */
-    else if(this->stack_data == (int *) 0) {
+    else if(this->stack_data == (void **) 0) {
       this->stack_depth = 1;
-      this->stack_data = (int *) malloc(this->stack_depth * sizeof(int));
+      this->stack_data = (void **) malloc(this->stack_depth * sizeof(int));
     }
 
     /* We already have a stack.  We need to grow it.  So we'll double it. */
@@ -120,7 +122,7 @@ bool stack_push(stack *this,
     }
 
     /* If we don't have a stack, fail now. */
-    if(this->stack_data == (int *) 0) {
+    if(this->stack_data == (void **) 0) {
       printf("We don't have a stack.\n");
       retcode = false;
     }
@@ -130,7 +132,7 @@ bool stack_push(stack *this,
   if(retcode == true)
   {
     this->stack_index++;
-    this->stack_data[this->stack_index] = (int) i;
+    this->stack_data[this->stack_index] = i;
   }
 
   return retcode;
@@ -141,7 +143,7 @@ bool stack_push(stack *this,
  * Input:
  *   this = A pointer to the stack object.
  *
- *   i    = Pointer to the location to pop into.
+ *   dest = Pointer to the location to pop into.
  *
  * Output:
  *   true  = success.  i contains the int from the top.  It is popped.
@@ -149,13 +151,12 @@ bool stack_push(stack *this,
  */
 bool
 stack_pop(stack *this,
-          void *i)
+          void **dest)
 {
   bool retcode = false;
 
   if(this->stack_index >= 0) {
-    int *val = (int *) i;
-    *val = (int) this->stack_data[this->stack_index--];
+    *dest = this->stack_data[this->stack_index--];
     retcode = true;
   }
 
@@ -167,7 +168,7 @@ stack_pop(stack *this,
  * Input:
  *   this = A pointer to the stack object.
  *
- *   i    = Pointer to the location to pop into.
+ *   dest = Pointer to the location to pop into.
  *
  * Output:
  *   Returns 0 if success.  i contains the int from the top.  It is NOT popped.
@@ -175,14 +176,13 @@ stack_pop(stack *this,
  */
 bool
 stack_peek(stack *this,
-           void *i)
+           void **dest)
 {
   bool retcode = false;
 
   if(this->stack_index >= 0)
   {
-    int *val = (int *) i;
-    *val = this->stack_data[this->stack_index];
+    *dest = this->stack_data[this->stack_index];
     retcode = true;
   }
 

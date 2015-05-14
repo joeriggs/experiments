@@ -13,11 +13,11 @@ stack *stack_new(void);
 
 bool stack_delete(stack *this);
 
-bool stack_push(stack *this, void *i);
+bool stack_push(stack *this, void *src);
 
-bool stack_pop( stack *this, void *i);
+bool stack_pop( stack *this, void **dest);
 
-bool stack_peek(stack *this, void *i);
+bool stack_peek(stack *this, void **dest);
 
 /********************************** TEST API **********************************/
 
