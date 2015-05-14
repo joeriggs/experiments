@@ -1,0 +1,30 @@
+
+The class heirarchy looks like this:
+
+ ---------------------------------------------------------------
+|                             main()                            |
+ ---------------------------------------------------------------
+ -----------  --------------------------------------------------
+| raw_stdin ||                    calculator                    |
+ -----------  --------------------------------------------------
+              -----------  -----------  -----------  -----------
+             |   list    ||  operand  || operator  ||   stack   |
+              -----------  -----------  -----------  -----------
+
+main() provides the character-based interface to the user.
+
+raw_stdin provides an interface between main() and the console device, allowing
+the user to have a better interactive interface.
+
+calculator is the engine.  It parses the user input and drives the calculator
+operation.
+
+list is a doubly-linked list.  It is used to store the user-input infix
+equation and the internally-generated postfix equation.
+
+operand is used to store each operand.
+
+operator is used to store each operator.
+
+stack is used to convert infix to postfix, and to process postfix.
+
