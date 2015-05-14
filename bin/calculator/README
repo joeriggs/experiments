@@ -1,30 +1,48 @@
 
+This is a C implementation of a math calculator.  The calculator provides a
+simple interactive text user interface.  The idea is that you can use it as-is
+or build a more sophisticated user interface that sits on top of it.
+
+Tested on the following platforms:
+  CentOS 5.6 (32-bit) - gcc version 4.1.2
+  CentOS 6.6 (32-bit) - gcc version 4.4.7
+  CentOS 7.1 (64-bit) - gcc version 4.8.3
+
+
 The class heirarchy looks like this:
 
- ---------------------------------------------------------------
-|                             main()                            |
- ---------------------------------------------------------------
- -----------  --------------------------------------------------
-| raw_stdin ||                    calculator                    |
- -----------  --------------------------------------------------
-              -----------  -----------  -----------  -----------
-             |   list    ||  operand  || operator  ||   stack   |
-              -----------  -----------  -----------  -----------
+   ---------------------------------------------------------------
+  |                             main()                            |
+   ---------------------------------------------------------------
+   -----------  --------------------------------------------------
+  | raw_stdin ||                    calculator                    |
+   -----------  --------------------------------------------------
+                -----------  -----------  -----------  -----------
+               |   list    ||  operand  || operator  ||   stack   |
+                -----------  -----------  -----------  -----------
 
-main() provides the character-based interface to the user.
+  * main() provides the text-based user interface.  If you want to replace the
+    text-based user interface with something more sophisticated, then you will
+    want to replace main() with your own main().
 
-raw_stdin provides an interface between main() and the console device, allowing
-the user to have a better interactive interface.
+  * raw_stdin provides an interface between main() and the console device,
+    allowing the user to have a better interactive interface.  If you want to
+    replace the text-based user interface with something more sophisticated,
+    then you can remove this class.
 
-calculator is the engine.  It parses the user input and drives the calculator
-operation.
+  * calculator is the engine.  It parses the user input and drives all
+    calculator operation.
 
-list is a doubly-linked list.  It is used to store the user-input infix
-equation and the internally-generated postfix equation.
+    * list is a doubly-linked list.  It is used to store the user-input infix
+       equation and is also used to store the internally-generated postfix
+       equation while it is being created and prior to being executed.
 
-operand is used to store each operand.
+    * operand is used to store each operand.  It contains members that know how
+      to manipulate the numeric operands.
 
-operator is used to store each operator.
+    * operator is used to store each operator.  It contains members that know
+      how to execute the steps necessary to perform the operator.
 
-stack is used to convert infix to postfix, and to process postfix.
+    * stack is used during the step that converts the user-input infix equation
+      to postfix, and while processing the postfix equation.
 
