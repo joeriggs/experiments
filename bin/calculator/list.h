@@ -15,15 +15,15 @@ bool list_delete(list *this);
 
 bool list_add_tail(list *this, void *object, int type);
 
-int list_get_tail(list *this, void **object, int *type);
+bool list_get_tail(list *this, void **object, int *type);
 
-int list_del_tail(list *this);
+bool list_del_tail(list *this);
 
 bool list_rem_head(list *this, void **object, int *type);
 
-typedef void (*list_traverse_cb)(const void *cb_ctx, const void *object, int type);
+typedef bool (*list_traverse_cb)(const void *cb_ctx, const void *object, int type);
 
-void list_traverse(list *this, list_traverse_cb cb, void *cb_obj);
+bool list_traverse(list *this, list_traverse_cb cb, void *cb_obj);
 
 /********************************** TEST API **********************************/
 

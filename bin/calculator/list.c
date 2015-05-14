@@ -99,8 +99,8 @@ list_delete(list *this)
  *             used by the caller.
  *
  * Output:
- *   Returns true if the object was added to the list.
- *   Returns false if the object was NOT added to the list.
+ *   true  = success.  The object was added to the list.
+ *   false = failure.  The object was NOT added to the list.
  */
 bool
 list_add_tail(list *this, void *object, int type)
@@ -144,7 +144,8 @@ list_add_tail(list *this, void *object, int type)
   return retval;
 }
 
-/* Get the entry that is on the end of the list.
+/* Get the entry that is on the end of the list.  This is a nondestructive
+ * operation.  The entry is returned, but it's also left on the list.
  *
  * Input:
  *   this    = A pointer to the list object.
@@ -154,12 +155,13 @@ list_add_tail(list *this, void *object, int type)
  *   type    = The location to store the type of the object.
  *
  * Output:
- *   Returns 0 if the last object was returned to the caller.
- *   Returns 1 if the last object was NOT returned.
+ *   true  = success.  The last object was returned to the caller.
+ *   false = failure.  The last object was NOT returned.
  */
-int list_get_tail(list *this, void **object, int *type)
+bool
+list_get_tail(list *this, void **object, int *type)
 {
-  int retval = 1;
+  bool retcode = false;
 
   /* Make sure there is an object, and make sure the list isn't empty. */
   if( (this != (list *) 0) && (this->tail != (list_item *) 0) )
@@ -167,10 +169,10 @@ int list_get_tail(list *this, void **object, int *type)
     list_item *tail = this->tail;
     *object = tail->object;
     *type   = tail->type;
-    retval = 0;
+    retcode = true;
   }
 
-  return retval;
+  return retcode;
 }
 
 /* Delete the last entry from the list.
@@ -179,12 +181,13 @@ int list_get_tail(list *this, void **object, int *type)
  *   this = A pointer to the list object.
  *
  * Output:
- *   Returns 0 if success.  If the list was NOT empty, the last entry is gone.
- *   Returns 1 if an error occurred.
+ *   true  = success.  If the list was NOT empty, the last entry is gone.
+ *   false = failure.
  */
-int list_del_tail(list *this)
+bool
+list_del_tail(list *this)
 {
-  int retval = 0;
+  bool retcode = false;
 
   /* Make sure there is an object, and make sure the list isn't empty. */
   if( (this != (list *) 0) && (this->tail != (list_item *) 0) )
@@ -211,9 +214,10 @@ int list_del_tail(list *this)
 
     /* Get rid of l. */
     free(l);
+    retcode = true;
   }
 
-  return retval;
+  return retcode;
 }
 
 /* Remove the first entry from the list and return to the caller.
@@ -283,22 +287,27 @@ list_rem_head(list *this, void **object, int *type)
  *            the cb function.
  *
  * Output:
- *   N/A.
+ *   true  = success.  We traversed the entire list without problems.
+ *   false = failure.  We ran into a problem somewhere along the way.
  */
-void
+bool
 list_traverse(list *this,
               list_traverse_cb cb,
               void *cb_ctx)
 {
+  bool retcode = false;
+
   if(cb != (list_traverse_cb) 0)
   {
     list_item *i = this->head;
     while(i != (list_item *) 0)
     {
-      cb(cb_ctx, i->object, i->type);
+      retcode = cb(cb_ctx, i->object, i->type);
       i = i->next;
     }
   }
+
+  return retcode;
 }
 
 /******************************************************************************

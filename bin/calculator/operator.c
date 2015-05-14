@@ -16,14 +16,6 @@
  ****************************** CLASS DEFINITION ******************************
  *****************************************************************************/
 
-/* This a the list of operator types.  It deals specifically with how many
- * operands are required. */
-typedef enum {
-  op_type_none,
-  op_type_unary,
-  op_type_binary
-} operator_type;
-
 /* This is the list of supported operators. */
 typedef struct operator_property {
   const char             value;
@@ -31,26 +23,27 @@ typedef struct operator_property {
   operator_type          op_type;
   int                    input_precedence;
   int                    stack_precedence;
-  operand_binary_op      op_exec;
+  operand_binary_op      binary_op_exec;
+  operand_unary_op       unary_op_exec;
 } operator_property;
 static operator_property operator_properties[] = {
-  { '(',  "(",    op_type_none,    0, 99, 0 }, // Open parentheses
-  { ')',  ")",    op_type_none,   98,  0, 0 }, // Open parentheses
-  { '+',  "+",    op_type_binary,  9,  8, operand_op_add }, // Addition
-  { '-',  "-",    op_type_binary,  9,  8, operand_op_sub }, // Subtraction
-  { '*',  "*",    op_type_binary,  7,  6, operand_op_mul }, // Multiplication
-  { '/',  "/",    op_type_binary,  7,  6, operand_op_div }, // Division
-  { '^',  "^",    op_type_binary,  4,  5, operand_op_exp }, // Exponentiation
-  { '&',  "AND",  op_type_binary, 17, 16, 0 }, // Bitwise AND
-  { '|',  "OR",   op_type_binary, 21, 20, 0 }, // Bitwise OR
-  { 'x',  "XOR",  op_type_binary, 19, 18, 0 }, // Bitwise XOR
-  { '~',  "NOT",  op_type_unary,   3,  2, 0 }, // Bitwise Negate
-  { '%',  "MOD",  op_type_binary,  7,  6, 0 }, // Modulus
-  { '<',  "SHL",  op_type_binary, 11, 10, 0 }, // Shift Left
-  { '>',  "SHR",  op_type_binary, 11, 10, 0 }, // Shift Right
-  { 'l',  "ROL",  op_type_binary, 11, 10, 0 }, // Rotate Left
-  { 'r',  "ROR",  op_type_binary, 11, 10, 0 }, // Rotate Right
-  {  0 ,  "",     op_type_none,    0,  0, 0 }
+  { '(',  "(",    op_type_none,    0, 99, 0, 0 }, // Open parentheses
+  { ')',  ")",    op_type_none,   98,  0, 0, 0 }, // Open parentheses
+  { '+',  "+",    op_type_binary,  9,  8, operand_op_add, 0 }, // Addition
+  { '-',  "-",    op_type_binary,  9,  8, operand_op_sub, 0 }, // Subtraction
+  { '*',  "*",    op_type_binary,  7,  6, operand_op_mul, 0 }, // Multiplication
+  { '/',  "/",    op_type_binary,  7,  6, operand_op_div, 0 }, // Division
+  { '^',  "^",    op_type_binary,  4,  5, operand_op_exp, 0 }, // Exponentiation
+  { '&',  "AND",  op_type_binary, 17, 16, operand_op_and, 0 }, // Bitwise AND
+  { '|',  "OR",   op_type_binary, 21, 20, operand_op_or,  0 }, // Bitwise OR
+  { 'x',  "XOR",  op_type_binary, 19, 18, operand_op_xor, 0 }, // Bitwise XOR
+  { '~',  "NOT",  op_type_unary,   3,  2, 0, operand_op_not }, // Bitwise Negate
+  { '%',  "MOD",  op_type_binary,  7,  6, 0, 0 }, // Modulus
+  { '<',  "SHL",  op_type_binary, 11, 10, 0, 0 }, // Shift Left
+  { '>',  "SHR",  op_type_binary, 11, 10, 0, 0 }, // Shift Right
+  { 'l',  "ROL",  op_type_binary, 11, 10, 0, 0 }, // Rotate Left
+  { 'r',  "ROR",  op_type_binary, 11, 10, 0, 0 }, // Rotate Right
+  {  0 ,  "",     op_type_none,    0,  0, 0, 0 }
 };
 
 /* This is the operator class. */
@@ -63,30 +56,37 @@ struct operator {
  ******************************** PRIVATE API *********************************
  *****************************************************************************/
 
-/* This function checks to see if the next thing in the equation is a binary
- * operator.  A binary operator requires 2 operands (ex. "1 + 2").
+/* This function checks the operator and figures out which operator it is.
  *
  * Input:
- *   c - The character to check.  All operators are one character.
+ *   this = A pointer to the operator object.
+ *
+ *   c    = The one-character operator mnemonic.  All operators are one character.
  *
  * Output:
- *   Returns a pointer to the operator_property that describes the operator.
- *   Returns 0 if c isn't an operator.
+ *   true  = success.  *op_prop points to the operator_property that describes
+ *                     the operator.
+ *   false = failure.  *op_prop is undefined.
  */
-static operator_property
-*is_binary_operator(char c)
+static bool
+operator_set_op_prop(operator *this,
+                     char c)
 {
-  operator_property *retval = (operator_property *) 0;
+  bool retcode = false;
 
-  int i;
-  for(i = 0; operator_properties[i].value != 0; i++) {
-    if(c == operator_properties[i].value) {
-      retval = &operator_properties[i];
-      break;
+  if(this != (operator *) 0)
+  {
+    int i;
+    for(i = 0; operator_properties[i].value != 0; i++) {
+      if(c == operator_properties[i].value) {
+        this->op_prop = &operator_properties[i];
+        retcode = true;
+        break;
+      }
     }
   }
 
-  return retval;
+  return retcode;
 }
 
 /******************************************************************************
@@ -108,7 +108,7 @@ operator_new(const char c)
 {
   operator *this = malloc(sizeof(*this));
 
-  if((this->op_prop = is_binary_operator(c)) == (operator_property *) 0)
+  if(operator_set_op_prop(this, c) == false)
   {
     free(this);
     this = (operator *) 0;
@@ -197,6 +197,59 @@ operator_get_name(operator *this,
   return retval;
 }
 
+/* Return whether the specified operand is binary or unary.
+ *
+ * Input:
+ *   this = A pointer to the operator object.
+ *
+ * Output:
+ *   true  = success.  *type is set to the operand type.
+ *   false = failure.  *type is set to op_type_none.
+ */
+bool
+operator_get_op_type(operator *this,
+                     operator_type *type)
+{
+  bool retcode = false;
+
+  if(type != (operator_type *) 0)
+  {
+    if(this != (operator *) 0)
+    {
+      *type = this->op_prop->op_type;
+    }
+
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+/* Perform a unary operation.
+ *
+ * Input:
+ *   this = A pointer to the operator object.
+ *
+ *   op   = A ptr to the operand.  The result will be stored in op.
+ *
+ * Output:
+ *   true  = success.  The result is in op.
+ *   false = failure.
+ */
+bool
+operator_do_unary(operator *this,
+                  operand *op)
+{
+  bool retcode = false;
+
+  if(this->op_prop->unary_op_exec != (operand_unary_op) 0)
+  {
+    retcode = this->op_prop->unary_op_exec(op);
+  }
+
+  return retcode;
+}
+
 /* Perform a binary operation.
  *
  * Input:
@@ -217,9 +270,9 @@ operator_do_binary(operator *this,
 {
   bool retcode = false;
 
-  if(this->op_prop->op_exec != (operand_binary_op) 0)
+  if(this->op_prop->binary_op_exec != (operand_binary_op) 0)
   {
-    retcode = this->op_prop->op_exec(op1, op2);
+    retcode = this->op_prop->binary_op_exec(op1, op2);
   }
 
   return retcode;

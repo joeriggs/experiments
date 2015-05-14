@@ -2,6 +2,7 @@
  * exclusively by the calculator class.
  */
 
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -15,13 +16,13 @@
 
 /* This is the operand class. */
 struct operand {
-  int    i_val;
-  double d_val;
-  bool   got_decimal_point;
-  double fp_multiplier;
+  uint64_t i_val;
+  double   f_val;
+  bool     got_decimal_point;
+  double   fp_multiplier;
 
-  /* The number system we're currently configured to use.  The allowed settings
-   * are currently base_10 and base_16. */
+  /* The number base we're currently configured to use.  This refers to things
+   * like base_10 or base_16. */
   operand_base base;
 };
   
@@ -36,12 +37,12 @@ struct operand {
 /* This is the addition function.
  *
  * Input:
- *   this = A pointer to the first operand.  The result is returned in this one.
+ *   op1  = A pointer to the first operand.  The result is returned in this one.
  *
  *   op2  = The other operand.  Addition is BINARY.
  *
  * Output:
- *   true  = successful.
+ *   true  = success.
  *   false = failure.
  */
 bool
@@ -50,18 +51,18 @@ operand_op_add(operand *op1,
 {
   bool retcode = false;
 
-  bool   is_fp1,   is_fp2;
-  int    i1 = 0,   i2 = 0;
-  double f1 = 0.0, f2 = 0.0;
+  bool is_fp1,   is_fp2;
+  uint64_t l1 = 0,   l2 = 0;
+  double   f1 = 0.0, f2 = 0.0;
 
-  if( (operand_get_val(op1, &is_fp1, &i1, &f1) == true) &&
-      (operand_get_val(op2, &is_fp2, &i2, &f2) == true) )
+  if( (operand_get_val(op1, &is_fp1, &l1, &f1) == true) &&
+      (operand_get_val(op2, &is_fp2, &l2, &f2) == true) )
   {
     if(is_fp1 || is_fp2)
     {
-      f1 = is_fp1 ? f1 : i1;
-      f2 = is_fp2 ? f2 : i2;
-      op1->d_val = f1 + f2;
+      f1 = is_fp1 ? f1 : l1;
+      f2 = is_fp2 ? f2 : l2;
+      op1->f_val = f1 + f2;
       op1->got_decimal_point = true;
       retcode = true;
     }
@@ -78,12 +79,12 @@ operand_op_add(operand *op1,
 /* This is the subtraction function.
  *
  * Input:
- *   this = A pointer to the first operand.  The result is returned in this one.
+ *   op1  = A pointer to the first operand.  The result is returned in this one.
  *
  *   op2  = The other operand.  Subtraction is BINARY.
  *
  * Output:
- *   true  = successful.
+ *   true  = success.
  *   false = failure.
  */
 bool
@@ -92,9 +93,9 @@ operand_op_sub(operand *op1,
 {
   bool retcode = false;
 
-  bool   is_fp1,   is_fp2;
-  int    i1 = 0,   i2 = 0;
-  double f1 = 0.0, f2 = 0.0;
+  bool is_fp1,   is_fp2;
+  uint64_t i1 = 0,   i2 = 0;
+  double   f1 = 0.0, f2 = 0.0;
 
   if( (operand_get_val(op1, &is_fp1, &i1, &f1) == true) &&
       (operand_get_val(op2, &is_fp2, &i2, &f2) == true) )
@@ -103,7 +104,7 @@ operand_op_sub(operand *op1,
     {
       f1 = is_fp1 ? f1 : i1;
       f2 = is_fp2 ? f2 : i2;
-      op1->d_val = f1 - f2;
+      op1->f_val = f1 - f2;
       op1->got_decimal_point = true;
       retcode = true;
     }
@@ -120,12 +121,12 @@ operand_op_sub(operand *op1,
 /* This is the multiplication function.
  *
  * Input:
- *   this = A pointer to the first operand.  The result is returned in this one.
+ *   op1  = A pointer to the first operand.  The result is returned in this one.
  *
  *   op2  = The other operand.  Multiplication is BINARY.
  *
  * Output:
- *   true  = successful.
+ *   true  = success.
  *   false = failure.
  */
 bool
@@ -134,9 +135,9 @@ operand_op_mul(operand *op1,
 {
   bool retcode = false;
 
-  bool   is_fp1,   is_fp2;
-  int    i1 = 0,   i2 = 0;
-  double f1 = 0.0, f2 = 0.0;
+  bool is_fp1,   is_fp2;
+  uint64_t i1 = 0,   i2 = 0;
+  double   f1 = 0.0, f2 = 0.0;
 
   if( (operand_get_val(op1, &is_fp1, &i1, &f1) == true) &&
       (operand_get_val(op2, &is_fp2, &i2, &f2) == true) )
@@ -145,7 +146,7 @@ operand_op_mul(operand *op1,
     {
       f1 = is_fp1 ? f1 : i1;
       f2 = is_fp2 ? f2 : i2;
-      op1->d_val = f1 * f2;
+      op1->f_val = f1 * f2;
       op1->got_decimal_point = true;
       retcode = true;
     }
@@ -161,12 +162,12 @@ operand_op_mul(operand *op1,
 /* This is the division function.
  *
  * Input:
- *   this = A pointer to the first operand.  The result is returned in this one.
+ *   op1  = A pointer to the first operand.  The result is returned in this one.
  *
  *   op2  = The other operand.  Division is BINARY.
  *
  * Output:
- *   true  = successful.
+ *   true  = success.
  *   false = failure.
  */
 bool
@@ -175,9 +176,9 @@ operand_op_div(operand *op1,
 {
   bool retcode = false;
 
-  bool   is_fp1,   is_fp2;
-  int    i1 = 0,   i2 = 0;
-  double f1 = 0.0, f2 = 0.0;
+  bool is_fp1,   is_fp2;
+  uint64_t i1 = 0,   i2 = 0;
+  double   f1 = 0.0, f2 = 0.0;
 
   if( (operand_get_val(op1, &is_fp1, &i1, &f1) == true) &&
       (operand_get_val(op2, &is_fp2, &i2, &f2) == true) )
@@ -188,7 +189,7 @@ operand_op_div(operand *op1,
       {
         f1 = is_fp1 ? f1 : i1;
         f2 = is_fp2 ? f2 : i2;
-        op1->d_val = f1 / f2;
+        op1->f_val = f1 / f2;
         op1->got_decimal_point = true;
         retcode = true;
       }
@@ -209,12 +210,12 @@ operand_op_div(operand *op1,
 /* This is the exponentiation function.
  *
  * Input:
- *   this = A pointer to the first operand.  The result is returned in this one.
+ *   op1  = A pointer to the first operand.  The result is returned in this one.
  *
  *   op2  = The other operand.  Exponentiation is BINARY.
  *
  * Output:
- *   true  = successful.
+ *   true  = success.
  *   false = failure.
  */
 bool
@@ -224,13 +225,12 @@ operand_op_exp(operand *op1,
   bool retcode = false;
 
   bool is_fp1, is_fp2;
-  int      i1,     i2;
+  uint64_t i1,     i2;
   double   f1,     f2;
 
   operand_get_val(op1, &is_fp1, &i1, &f1);
   operand_get_val(op2, &is_fp2, &i2, &f2);
 
-  printf("op1->i_val %d: op2->i_val %d.\n", op1->i_val, op2->i_val);
   if(op2->i_val == 0)
   {
     op1->i_val = 1;
@@ -251,6 +251,148 @@ operand_op_exp(operand *op1,
   return retcode;
 }
 
+/* This is the hexadecimal AND function.
+ *
+ * Input:
+ *   op1  = A pointer to the first operand.  The result is returned in this one.
+ *
+ *   op2  = The other operand.  AND is BINARY.
+ *
+ * Output:
+ *   true  = success.
+ *   false = failure.
+ */
+bool
+operand_op_and(operand *op1,
+               operand *op2)
+{
+  bool retcode = false;
+
+  operand_base base1, base2;
+  if((operand_get_base(op1, &base1) == true) &&
+     (operand_get_base(op2, &base2) == true) &&
+     (base1 == operand_base_16) &&
+     (base2 == operand_base_16))
+  {
+    bool is_fp1, is_fp2;
+    uint64_t i1,     i2;
+    double   f1,     f2;
+
+    operand_get_val(op1, &is_fp1, &i1, &f1);
+    operand_get_val(op2, &is_fp2, &i2, &f2);
+
+    op1->i_val &= op2->i_val;
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+/* This is the hexadecimal OR function.
+ *
+ * Input:
+ *   op1  = A pointer to the first operand.  The result is returned in this one.
+ *
+ *   op2  = The other operand.  OR is BINARY.
+ *
+ * Output:
+ *   true  = success.
+ *   false = failure.
+ */
+bool
+operand_op_or(operand *op1,
+              operand *op2)
+{
+  bool retcode = false;
+
+  operand_base base1, base2;
+  if((operand_get_base(op1, &base1) == true) &&
+     (operand_get_base(op2, &base2) == true) &&
+     (base1 == operand_base_16) &&
+     (base2 == operand_base_16))
+  {
+    bool is_fp1, is_fp2;
+    uint64_t i1,     i2;
+    double   f1,     f2;
+
+    operand_get_val(op1, &is_fp1, &i1, &f1);
+    operand_get_val(op2, &is_fp2, &i2, &f2);
+
+    op1->i_val |= op2->i_val;
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+
+/* This is the hexadecimal XOR function.
+ *
+ * Input:
+ *   op1  = A pointer to the operand object.
+ *
+ *   op2  = The other operand.  XOR is BINARY.
+ *
+ * Output:
+ *   true  = success.
+ *   false = failure.
+ */
+bool
+operand_op_xor(operand *op1,
+               operand *op2)
+{
+  bool retcode = false;
+
+  operand_base base1, base2;
+  if((operand_get_base(op1, &base1) == true) &&
+     (operand_get_base(op2, &base2) == true) &&
+     (base1 == operand_base_16) &&
+     (base2 == operand_base_16))
+  {
+    bool is_fp1, is_fp2;
+    uint64_t i1,     i2;
+    double   f1,     f2;
+
+    operand_get_val(op1, &is_fp1, &i1, &f1);
+    operand_get_val(op2, &is_fp2, &i2, &f2);
+
+    op1->i_val ^= op2->i_val;
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+/* This is the hexadecimal NOT function.
+ *
+ * Input:
+ *   this = A pointer to the only important operand.  NOT is a UNARY operation.
+ *          The result is returned in this parameter.
+ *
+ * Output:
+ *   true  = success.  The result is returned in this.
+ *   false = failure.
+ */
+bool
+operand_op_not(operand *this)
+{
+  bool retcode = false;
+
+  operand_base base;
+  if((operand_get_base(this, &base) == true) && (base == operand_base_16))
+  {
+    bool is_fp;
+    uint64_t i;
+    double   f;
+
+    operand_get_val(this, &is_fp, &i, &f);
+
+    this->i_val = ~this->i_val;
+    retcode = true;
+  }
+
+  return retcode;
+}
 /******************************************************************************
  ********************************* PUBLIC API *********************************
  *****************************************************************************/
@@ -272,8 +414,8 @@ operand_new(operand_base base)
 
   if(this != (operand *) 0)
   {
-    this->i_val             = 0;
-    this->d_val             = 0.0;
+    this->i_val             = 0LL;
+    this->f_val             = 0.0;
     this->got_decimal_point = false;
     this->base              = base;
   }
@@ -305,8 +447,6 @@ operand_delete(operand *this)
 }
 
 /* Get the current number base that the operand is configured for.
- *
- * The current allowed bases are base_10 (decimal) and base_16 (hexadecimal).
  *
  * Input:
  *   this = A pointer to the operand object.
@@ -341,8 +481,6 @@ operand_get_base(operand *this,
 }
 
 /* Set the number base that the operand should use.
- *
- * The current allowed bases are base_10 (decimal) and base_16 (hexadecimal).
  *
  * Input:
  *   this = A pointer to the operand object.
@@ -379,9 +517,9 @@ operand_set_base(operand *this,
         {
           if(this->got_decimal_point == true)
           {
-            this->i_val = this->d_val;
+            this->i_val = this->f_val;
             this->got_decimal_point = false;
-            this->d_val = 0.0;
+            this->f_val = 0.0;
           }
         }
         this->base = base;
@@ -416,67 +554,81 @@ operand_add_char(operand *this,
 {
   bool retcode = false;
 
-  /* Get the base (base_10 or base_16) for the operand. */
+  /* Get the base for the operand. */
   operand_base base;
-  if(operand_get_base(this, &base) == false)
+  if(operand_get_base(this, &base) == true)
   {
-    base = operand_base_10;
-  }
-  
-  /* If it's a decimal point, prepare to start doing decimal math. */
-  if((base == operand_base_10) && (c == '.'))
-  {
-    if(this->got_decimal_point == false)
+    /* If it's a decimal point, prepare to start doing decimal math. */
+    if((base == operand_base_10) && (c == '.'))
     {
-      this->d_val = this->i_val;
-      this->i_val = 0;
-      this->got_decimal_point = true;
-      this->fp_multiplier = 0.10;
-    }
-
-    retcode = true;
-  }
-
-  /* Not a decimal point.  It better be a digit. */
-  else
-  {
-    /* If it's an ASCII digit, convert it to a binary. */
-    unsigned char c_val = 0xFF;
-    if((c >= '0') && (c <= '9'))
-    {
-      c_val = c - '0';
-    }
-    else if( (base == operand_base_16) && (((c & 0xDF) >= 'A') && ((c & 0xDF) <= 'F')) )
-    {
-      c_val = (c & 0xDF) - 0x37;
-    }
-
-    /* Is it as a digit?  If it is, then add it to the current value. */
-    if(c_val != 0xFF)
-    {
-      switch(base)
+      if(this->got_decimal_point == false)
       {
-      case operand_base_16:
-        this->i_val = (this->i_val * 16) + c_val;
-        break;
-
-      case operand_base_10:
-      default:
-        if(this->got_decimal_point == true)
-        {
-          double f = c_val;
-          f *= this->fp_multiplier;
-          this->d_val += f;
-          this->fp_multiplier /= 10.0;
-        }
-        else
-        {
-          this->i_val = (this->i_val * 10) + c_val;
-        }
-        break;
+        this->f_val = this->i_val;
+        this->i_val = 0;
+        this->got_decimal_point = true;
+        this->fp_multiplier = 0.10;
       }
 
       retcode = true;
+    }
+
+    else if((c & 0xDF) == 'S')
+    {
+      /* Subtract the current value from 0.  That flips the sign.  It's the
+       * same for integer and floating point. */
+      if(this->got_decimal_point == false)
+      {
+        this->i_val = 0 - this->i_val;
+      }
+      else
+      {
+        this->f_val = 0.0 - this->f_val;
+      }
+
+      retcode = true;
+    }
+
+    /* Not a decimal point or sign.  It better be a digit. */
+    else
+    {
+      /* If it's an ASCII digit, convert it to a binary. */
+      unsigned char c_val = 0xFF;
+      if((c >= '0') && (c <= '9'))
+      {
+        c_val = c - '0';
+      }
+      else if( (base == operand_base_16) && (((c & 0xDF) >= 'A') && ((c & 0xDF) <= 'F')) )
+      {
+        c_val = (c & 0xDF) - 0x37;
+      }
+
+      /* Is it as a digit?  If it is, then add it to the current value. */
+      if(c_val != 0xFF)
+      {
+        switch(base)
+        {
+        case operand_base_16:
+          this->i_val = (this->i_val * 16) + c_val;
+          break;
+
+        case operand_base_10:
+        default:
+          if(this->got_decimal_point == true)
+          {
+            double f = c_val;
+            f *= this->fp_multiplier;
+            this->f_val += f;
+            this->fp_multiplier /= 10.0;
+          }
+          else
+          {
+            this->i_val = (this->i_val * 10) + c_val;
+          }
+          break;
+        }
+
+        retcode = true;
+      }
     }
   }
 
@@ -493,18 +645,18 @@ operand_add_char(operand *this,
  *   i_val = A ptr to an integer.  It is set to the value of the object if
  *           is_fp == false.
  *
- *   d_val = A ptr to a float.  It is set to the value of the object if
+ *   f_val = A ptr to a float.  It is set to the value of the object if
  *           is_fp == true.
  *
  * Output:
- *   true  = successful.
- *   false = unsuccessful.
+ *   true  = success.
+ *   false = failure.
  */
 bool
-operand_get_val(operand *this,
-                bool    *is_fp,
-                int     *i_val,
-                double  *d_val)
+operand_get_val(operand  *this,
+                bool     *is_fp,
+                uint64_t *i_val,
+                double   *f_val)
 {
   bool retcode = false;
 
@@ -512,7 +664,7 @@ operand_get_val(operand *this,
   {
     if((*is_fp = this->got_decimal_point) != 0)
     {
-      *d_val = this->d_val;
+      *f_val = this->f_val;
     }
     else
     {

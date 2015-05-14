@@ -30,7 +30,7 @@ raw_stdin *raw_stdin_new(void)
   return this;
 }
 
-const char
+char
 raw_stdin_getchar(raw_stdin *this)
 {
   char c;

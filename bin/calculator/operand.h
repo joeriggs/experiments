@@ -2,6 +2,8 @@
  * exclusively by the calculator class.
  */
 
+#include <stdint.h>
+
 /****************************** CLASS DEFINITION ******************************/
 
 typedef enum {
@@ -15,12 +17,17 @@ typedef struct operand operand;
 /********************************* PUBLIC OPS *********************************/
 
 typedef bool (*operand_binary_op)(operand *op1, operand *op2);
+typedef bool (*operand_unary_op)(operand *op);
 
 bool operand_op_add(operand *op1, operand *op2);
 bool operand_op_sub(operand *op1, operand *op2);
 bool operand_op_mul(operand *op1, operand *op2);
 bool operand_op_div(operand *op1, operand *op2);
 bool operand_op_exp(operand *op1, operand *op2);
+bool operand_op_and(operand *op1, operand *op2);
+bool operand_op_or (operand *op1, operand *op2);
+bool operand_op_xor(operand *op1, operand *op2);
+bool operand_op_not(operand *op);
 
 /********************************* PUBLIC API *********************************/
 
@@ -34,7 +41,7 @@ bool operand_set_base(operand *this, operand_base base);
 
 bool operand_add_char(operand *this, char c);
 
-bool operand_get_val(operand *this, bool *is_fp, int *i_val, double *d_val);
+bool operand_get_val(operand *this, bool *is_fp, uint64_t *i_val, double *f_val);
 
 /********************************** TEST API **********************************/
 

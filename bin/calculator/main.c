@@ -37,6 +37,13 @@ display_help(void)
     " * - Multiplication\n"
     " / - Division\n"
     " ^ - Exponentiation.  Right to left associative.  2^3^3 = 2^(3^3).\n"
+    "\n"
+    "Operators that are only supported for Hexadecimal are:\n"
+    " & - Bitwise AND\n"
+    " | - Bitwise OR\n"
+    " x - Bitwise XOR\n"
+    " ~ - Bitwise NOT (1's complement).  This is a UNARY operator.\n"
+    "\n"
   );
 }
 
@@ -59,13 +66,10 @@ display_calc(calculator *calc)
 
   /* If the caller passes us a NULL calculator object, then display an error
    * message.  Otherwise get the console data from the calculator object. */
-  if(calc == (calculator *) 0)
+  if( (calc == (calculator *) 0) ||
+      (calculator_get_console(calc, calc_obj_buf, sizeof(calc_obj_buf)) == false) )
   {
     snprintf(calc_obj_buf, (sizeof(calc_obj_buf) - 1), "ERROR");
-  }
-  else
-  {
-    calculator_get_console(calc, calc_obj_buf, sizeof(calc_obj_buf));
   }
 
   /* Now stretch/shrink the console data to fit the calculator's display. */
@@ -145,11 +149,10 @@ int main(int argc, char **argv)
             {
               switch(cur_base)
               {
-              case calculator_base_10: new_base = calculator_base_16; break;
-              case calculator_base_16: new_base = calculator_base_10; break;
-              default:                 new_base = calculator_base_10; break;
+              case calculator_base_10: new_base = calculator_base_16;      break;
+              case calculator_base_16: new_base = calculator_base_10;      break;
+              default:                 new_base = calculator_base_unknown; break;
               }
-
               calculator_set_base(calc, new_base);
             }
           }

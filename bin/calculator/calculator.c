@@ -40,8 +40,8 @@ struct calculator {
   /* A buffer that's used to build the console output. */
   char console_buf[1024];
 
-  /* The number system we're currently configured to use.  The allowed settings
-   * are currently base_10 and base_16. */
+  /* The number base we're currently configured to use.  This refers to things
+   * like base_10 or base_16. */
   calculator_base base;
 };
   
@@ -87,15 +87,39 @@ calculator_postfix(calculator *this)
       /* Operators are immediately processed. */
       else if(type == LIST_OBJ_TYPE_OPERATOR)
       {
-        operand *op1,  *op2;
-        stack_pop(tmp_stack, &op2);
-        stack_pop(tmp_stack, &op1);
-
-        if((retcode = operator_do_binary(cur_obj, op1, op2)) == false)
+        operator *cur_operator = (operator *) cur_obj;
+        operator_type op_type;
+        if((retcode = operator_get_op_type(cur_operator, &op_type)) == true)
         {
-          break;
+          if(op_type == op_type_unary)
+          {
+            void *op;
+            stack_pop(tmp_stack, &op);
+            if((retcode = operator_do_unary(cur_operator, op)) == false)
+            {
+              break;
+            }
+            stack_push(tmp_stack, op);
+          }
+
+          else if(op_type == op_type_binary)
+          {
+            void *op1, *op2;
+            stack_pop(tmp_stack, &op2);
+            stack_pop(tmp_stack, &op1);
+            if((retcode = operator_do_binary(cur_operator, op1, op2)) == false)
+            {
+              break;
+            }
+            stack_push(tmp_stack, op1);
+          }
+
+          else
+          {
+            retcode = false;
+            break;
+          }
         }
-        stack_push(tmp_stack, op1);
       }
 
       else
@@ -108,12 +132,8 @@ calculator_postfix(calculator *this)
      * stack.  Move it to the infix_list so we can start the next equation. */
     if(retcode == true)
     {
-      operand *result;
-      bool   is_fp;
-      int    i_val;
-      double f_val;
+      void    *result;
       stack_pop(tmp_stack, &result);
-      operand_get_val(result, &is_fp, &i_val, &f_val);
       list_add_tail(this->infix_list, result, LIST_OBJ_TYPE_OPERAND);
     }
 
@@ -161,7 +181,7 @@ calculator_infix2postfix(calculator *this)
       /* Used while processing the infix equation. */
       void *cur_obj;
       int type;
-      operator *stk_operator;
+      void *stk_operator;
 
       while((retcode == true) && (list_rem_head(this->infix_list, &cur_obj, &type) == true))
       {
@@ -251,13 +271,15 @@ calculator_infix2postfix(calculator *this)
  *               use the type to help us identify object.
  *
  * Output:
- *   N/A.
+ *   true  = success.  The base is correct for all operands.
+ *   false = failure.  The base settings for the operands is undefined.
  */
-static void
+static bool
 calculator_get_console_trv_cb(const void *ctx,
                               const void *object,
                               int type)
 {
+  bool retcode = false;
   calculator *this = (calculator *) ctx;
 
   if(this != (calculator *) 0)
@@ -269,53 +291,57 @@ calculator_get_console_trv_cb(const void *ctx,
 
     switch(type)
     {
-      case LIST_OBJ_TYPE_OPERAND:
-        {
-          operand *cur_operand = (operand *) object;
-          bool   is_fp;
-          int    i_val;
-          double f_val;
-          operand_get_val(cur_operand, &is_fp, &i_val, &f_val);
+    case LIST_OBJ_TYPE_OPERAND:
+      {
+        operand *cur_operand = (operand *) object;
+        bool     is_fp;
+        uint64_t i_val;
+        double   f_val;
+        operand_get_val(cur_operand, &is_fp, &i_val, &f_val);
 
-          if(is_fp)
+        if(is_fp)
+        {
+          snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%f" : " %f", f_val);
+          retcode = true;
+        }
+        else
+        {
+          calculator_base base;
+          if(calculator_get_base(this, &base) == true)
           {
-            snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%f" : " %f", f_val);
-          }
-          else
-          {
-            calculator_base base;
-            if(calculator_get_base(this, &base) == false)
-            {
-              base = calculator_base_10;
-            }
             if(base == calculator_base_16)
             {
-              snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%X" : " %X", i_val);
+              snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%llX" : " %llX", (long long) i_val);
             }
-
-            /* Default to base 10. */
             else
             {
-              snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%d" : " %d", i_val);
+              snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%lld" : " %lld", (long long) i_val);
             }
+
+            retcode = true;
           }
         }
-        break;
+      }
+      break;
 
-      case LIST_OBJ_TYPE_OPERATOR:
-        {
-          operator *cur_operator = (operator *) object;
-          const char *op_name;
-          operator_get_name(cur_operator, &op_name);
-          snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%s" : " %s", op_name);
-        }
-        break;
+    case LIST_OBJ_TYPE_OPERATOR:
+      {
+        operator *cur_operator = (operator *) object;
+        const char *op_name;
+        operator_get_name(cur_operator, &op_name);
+        snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%s" : " %s", op_name);
 
-      default:
-        printf("UNKNOWN: \n");
-        break;
+        retcode = true;
+      }
+      break;
+
+    default:
+      printf("UNKNOWN: \n");
+      break;
     }
   }
+
+  return retcode;
 }
 
 /* This is the callback function for a list traversal.  When the user switches
@@ -334,13 +360,15 @@ calculator_get_console_trv_cb(const void *ctx,
  *               use the type to help us identify object.
  *
  * Output:
- *   N/A.
+ *   true  = success.  The base is correct for all operands.
+ *   false = failure.  The base settings for the operands is undefined.
  */
-static void
+static bool
 calculator_set_base_trv_cb(const void *ctx,
                            const void *object,
                            int type)
 {
+  bool retcode = false;
   calculator *this = (calculator *) ctx;
 
   if(this != (calculator *) 0)
@@ -355,22 +383,29 @@ calculator_set_base_trv_cb(const void *ctx,
       {
         if( (this->base == calculator_base_10) && (cur_base != operand_base_10) )
         {
-          if(operand_set_base(cur_operand, operand_base_10) == false)
+          if(operand_set_base(cur_operand, operand_base_10) == true)
           {
+            retcode = true;
           }
         }
         else if( (this->base == calculator_base_16) && (cur_base != operand_base_16) )
         {
-          if(operand_set_base(cur_operand, operand_base_16) == false)
+          if(operand_set_base(cur_operand, operand_base_16) == true)
           {
+            retcode = true;
           }
         }
       }
-      else
-      {
-      }
+    }
+
+    /* Operators are a NOP. */
+    else
+    {
+      retcode = true;
     }
   }
+
+  return retcode;
 }
 
 /******************************************************************************
@@ -390,19 +425,36 @@ calculator_set_base_trv_cb(const void *ctx,
 calculator *
 calculator_new(void)
 {
-  calculator *this = malloc(sizeof(*this));
+  calculator *this = (calculator *) 0;
+  operand *op = (operand *) 0;
 
   /* Initialize. */
-  if(this != (calculator *) 0)
+  bool result = false;
+  if((this = (calculator *) malloc(sizeof(*this))) != (calculator *) 0)
   {
     /* Default is decimal (base_10). */
     this->base = calculator_base_10;
 
-    if((this->infix_list = list_new()) == (list *) 0)
+    if((this->infix_list = list_new()) != (list *) 0)
     {
-      free(this);
-      this = (calculator *) 0;
+      /* Initialize the infix_list to have an operand.  The first entry has to
+       * be an operand, so make sure there is one on the list. */
+      if((op = operand_new(this->base)) != (operand *) 0)
+      {
+        result = list_add_tail(this->infix_list, op, LIST_OBJ_TYPE_OPERAND);
+      }
     }
+  }
+
+  if(result == false)
+  {
+    if(op != (operand *) 0)
+    {
+      operand_delete(op);
+    }
+
+    calculator_delete(this);
+    this = (calculator *) 0;
   }
 
   return this;
@@ -435,8 +487,6 @@ calculator_delete(calculator *this)
 
 /* Get the current number base that the calculator is configured for.
  *
- * The current allowed bases are base_10 (decimal) and base_16 (hexadecimal).
- *
  * Input:
  *   this = A pointer to the calculator object.
  *
@@ -458,7 +508,10 @@ calculator_get_base(calculator *this,
     if(this != (calculator *) 0)
     {
       *base = this->base;
-      retcode = true;
+      if(*base != calculator_base_unknown)
+      {
+        retcode = true;
+      }
     }
     else
     {
@@ -470,8 +523,6 @@ calculator_get_base(calculator *this,
 }
 
 /* Set the number base that the calculator should use.
- *
- * The current allowed bases are base_10 (decimal) and base_16 (hexadecimal).
  *
  * Input:
  *   this = A pointer to the calculator object.
@@ -495,9 +546,7 @@ calculator_set_base(calculator *this,
     case calculator_base_10:
     case calculator_base_16:
       this->base = base;
-      list_traverse(this->infix_list, calculator_set_base_trv_cb, this);
-
-      retcode = true;
+      retcode = list_traverse(this->infix_list, calculator_set_base_trv_cb, this);
       break;
 
     default:
@@ -531,7 +580,25 @@ calculator_add_char(calculator *this,
     /* Backspace. */
     case 0x7F:
     case 0x08:
+      /* Delete the last item in the list. */
       list_del_tail(this->infix_list);
+
+      /* If the list is completely empty, create an operand object and place it
+       * at the head of the list.  The infix_list always begins with an operand
+       * so this is okay. */
+      void *obj;
+      int type;
+      if(list_get_tail(this->infix_list, &obj, &type) == false)
+      {
+        operand *op;
+        if((op = operand_new(this->base)) != (operand *) 0)
+        {
+          if((retcode = list_add_tail(this->infix_list, op, LIST_OBJ_TYPE_OPERAND)) == false)
+          {
+            operand_delete(op);
+          }
+        }
+      }
       break;
 
     case '=':
@@ -601,8 +668,8 @@ calculator_add_char(calculator *this,
  *              that is scrolling horizontally.
  *
  * Output:
- *   Returns true for success.  The message was created and placed in buf.
- *   Returns false if an error occurs.  The contents of buf is undefined.
+ *   true  = success.  The message has been created and placed in buf.
+ *   false = failure.  The contents of buf is undefined.
  */
 bool
 calculator_get_console(calculator *this,
@@ -614,19 +681,20 @@ calculator_get_console(calculator *this,
   if(this != (calculator *) 0)
   {
     memset(this->console_buf, 0, sizeof(this->console_buf));
-    list_traverse(this->infix_list, calculator_get_console_trv_cb, this);
-
-    /* Pass it back to the caller. */
-    if(strlen(this->console_buf) > (buf_size - 1))
+    if((retcode = list_traverse(this->infix_list, calculator_get_console_trv_cb, this)) == true)
     {
-      /* Allow room for the NULL terminator. */
-      char *p = this->console_buf + (strlen(this->console_buf) - (buf_size - 1));
-      memcpy(buf, p, (buf_size - 1));
-      buf[buf_size - 1] = 0;
-    }
-    else
-    {
-      strcpy(buf, this->console_buf);
+      /* Pass it back to the caller. */
+      if(strlen(this->console_buf) > (buf_size - 1))
+      {
+        /* Allow room for the NULL terminator. */
+        char *p = this->console_buf + (strlen(this->console_buf) - (buf_size - 1));
+        memcpy(buf, p, (buf_size - 1));
+        buf[buf_size - 1] = 0;
+      }
+      else
+      {
+        strcpy(buf, this->console_buf);
+      }
     }
   }
 
@@ -646,9 +714,10 @@ calculator_test(void)
   calculator *this = calculator_new();
   if(this != (calculator *) 0)
   {
-    list_print(this->infix_list, calculator_get_console_trv_cb, this);
+    retcode = list_print(this->infix_list, calculator_get_console_trv_cb, this);
+    printf("list_print() returned %d.\n", retcode);
+
     calculator_delete(this);
-    retcode = true;
   }
 
   return retcode;

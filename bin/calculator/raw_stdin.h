@@ -6,6 +6,6 @@
 typedef struct raw_stdin raw_stdin;
 
 extern raw_stdin *raw_stdin_new(void);
-extern const char raw_stdin_getchar(raw_stdin *this);
+extern char raw_stdin_getchar(raw_stdin *this);
 extern void raw_stdin_free(raw_stdin *this);
 
