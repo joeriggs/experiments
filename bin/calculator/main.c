@@ -12,6 +12,9 @@
 #include "calculator.h"
 #include "raw_stdin.h"
 
+/* This is the width of the calculator display window. */
+#define CALC_DISPLAY_WINDOW_WIDTH 32
+
 /* This is the help message.
  *
  * Input:
@@ -53,27 +56,27 @@ display_help(void)
  *   this = A pointer to the calculator object.
  *
  * Output:
- *   true  = Success.  The calculator display is updated.
- *   false = Failure.  The calculator display is NOT updated.
+ *   true  = success.  The calculator display is updated.
+ *   false = failure.  The calculator display is NOT updated.
  */
 static bool
 display_calc(calculator *calc)
 {
   bool retcode = false;
 
-  char   calc_obj_buf[33];
+  char   calc_obj_buf[CALC_DISPLAY_WINDOW_WIDTH];
   size_t calc_obj_buf_size = sizeof(calc_obj_buf);
 
   /* If the caller passes us a NULL calculator object, then display an error
    * message.  Otherwise get the console data from the calculator object. */
   if( (calc == (calculator *) 0) ||
-      (calculator_get_console(calc, calc_obj_buf, sizeof(calc_obj_buf)) == false) )
+      (calculator_get_console(calc, calc_obj_buf, calc_obj_buf_size) == false) )
   {
-    snprintf(calc_obj_buf, (sizeof(calc_obj_buf) - 1), "ERROR");
+    snprintf(calc_obj_buf, (calc_obj_buf_size - 1), "ERROR");
   }
 
   /* Now stretch/shrink the console data to fit the calculator's display. */
-  char calc_dsp_buf[33];
+  char   calc_dsp_buf[CALC_DISPLAY_WINDOW_WIDTH];
   size_t calc_dsp_buf_size = sizeof(calc_dsp_buf);
   if(strlen(calc_obj_buf) < (calc_dsp_buf_size - 1))
   {
@@ -91,7 +94,7 @@ display_calc(calculator *calc)
   }
 
   /* Get the hex/dec setting. */
-  char   base_str[16];
+  char   base_str[8];
   size_t base_str_max = (sizeof(base_str) - 1);
   calculator_base base;
   if(calculator_get_base(calc, &base) == true)
@@ -109,7 +112,7 @@ display_calc(calculator *calc)
   }
 
   /* Display our calculator output. */
-  char calc_buf[64];
+  char calc_buf[CALC_DISPLAY_WINDOW_WIDTH + 64];
   snprintf(calc_buf, sizeof(calc_buf), "\r-- %s -->%s<--\b\b\b\b", base_str, calc_dsp_buf);
   fprintf(stderr, calc_buf);
 
@@ -120,21 +123,22 @@ display_calc(calculator *calc)
 
 int main(int argc, char **argv)
 {
-  /* Create a console object.  We will use it to read raw console input. */
+  /* Create the console and calculator objects. */
   raw_stdin *console = raw_stdin_new();
-  if(console != (raw_stdin *) 0)
+  calculator *calc = calculator_new();
+  if( (console != (raw_stdin *) 0) &&
+      (calc != (calculator *) 0) )
   {
-    /* Create a calculator object. */
-    calculator *calc = calculator_new();
-    if(calc != (calculator *) 0)
-    {
-      fprintf(stderr, "Enter an equation.  'h' for help.\n");
-      display_calc(calc);
+    fprintf(stderr, "Enter an equation.  'h' for help.\n");
+    display_calc(calc);
 
-      bool done = false;
-      while(done == false)
+    bool keep_going = true;
+    while(keep_going == true)
+    {
+      /* Get the next character from the user. */
+      char c;
+      if((keep_going = raw_stdin_getchar(console, &c)) == true)
       {
-        char c = raw_stdin_getchar(console);
         switch(c)
         {
         case 'h':
@@ -159,29 +163,30 @@ int main(int argc, char **argv)
           break;
 
         case 'q':
-          done = true;
+          keep_going = false;
           break;
 
         default:
           calculator_add_char(calc, c);
           break;
         }
-
-        display_calc(calc);
       }
 
-      calculator_delete(calc);
+      display_calc(calc);
     }
+  }
 
-    raw_stdin_free(console);
+  if(calc != (calculator *) 0)
+  {
+    calculator_delete(calc);
+  }
+
+  if(console != (raw_stdin *) 0)
+  {
+    raw_stdin_delete(console);
     printf("\nBye.\n");
   }
 
-  else
-  {
-    fprintf(stderr, "Unable to create raw console object.\n");
-    return 1;
-  }
   return 0;
 }
 

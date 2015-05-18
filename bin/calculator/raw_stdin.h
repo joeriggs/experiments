@@ -2,10 +2,28 @@
  * program can read keyboard input one character at a time as it is being
  * entered by the user.
  */
+#ifndef __RAW_STDIN_H__
+#define __RAW_STDIN_H__
+
+/****************************** CLASS DEFINITION ******************************/
 
 typedef struct raw_stdin raw_stdin;
 
-extern raw_stdin *raw_stdin_new(void);
-extern char raw_stdin_getchar(raw_stdin *this);
-extern void raw_stdin_free(raw_stdin *this);
+/********************************* PUBLIC API *********************************/
+
+raw_stdin *raw_stdin_new(void);
+
+bool raw_stdin_delete(raw_stdin *this);
+
+bool raw_stdin_getchar(raw_stdin *this, char *c);
+
+/********************************** TEST API **********************************/
+
+#if defined(TEST)
+
+bool raw_stdin_test(void);
+
+#endif // TEST
+
+#endif // __RAW_STDIN_H__
 

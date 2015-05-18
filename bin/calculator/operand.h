@@ -1,6 +1,8 @@
 /* A class that can be used to store and manipulate operands.  It is used
  * exclusively by the calculator class.
  */
+#ifndef __OPERAND_H__
+#define __OPERAND_H__
 
 #include <stdint.h>
 
@@ -45,5 +47,11 @@ bool operand_get_val(operand *this, bool *is_fp, uint64_t *i_val, double *f_val)
 
 /********************************** TEST API **********************************/
 
+#if defined(TEST)
+
 bool operand_test(void);
+
+#endif // TEST
+
+#endif // __OPERAND_H__
 

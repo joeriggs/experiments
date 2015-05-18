@@ -1,5 +1,7 @@
 /* A class that can be used to evaluate C-style operators.
  */
+#ifndef __OPERATOR_H__
+#define __OPERATOR_H__
 
 /****************************** CLASS DEFINITION ******************************/
 
@@ -21,9 +23,9 @@ typedef struct operator operator;
 
 operator *operator_new(const char c);
 
-int operator_precedence(operator *this, int *input, int *stack);
+bool operator_precedence(operator *this, int *input, int *stack);
 
-int operator_get_name(operator *this, const char **op_name);
+bool operator_get_name(operator *this, const char **op_name);
 
 bool operator_get_op_type(operator *this, operator_type *type);
 
@@ -33,5 +35,11 @@ bool operator_do_binary(operator *this, operand *op1, operand *op2);
 
 /********************************** TEST API **********************************/
 
+#if defined(TEST)
+
 bool operator_test(void);
+
+#endif // TEST
+
+#endif // __OPERATOR_H__
 

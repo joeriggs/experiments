@@ -3,6 +3,8 @@
  * Refer to "Data Structures and Problem Solving in C++" by Mark Allen Weiss
  * for a really good description of an infix-to-postfix calculator.
  */
+#ifndef __CALCULATOR_H__
+#define __CALCULATOR_H__
 
 /****************************** CLASS DEFINITION ******************************/
 
@@ -30,5 +32,10 @@ bool calculator_get_console(calculator *this, char *buf, size_t buf_size);
 
 /********************************** TEST API **********************************/
 
+#if defined(TEST)
+
 bool calculator_test(void);
 
+#endif // TEST
+
+#endif // __CALCULATOR_H__

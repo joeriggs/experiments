@@ -13,6 +13,7 @@
 #include "list.h"
 #include "operand.h"
 #include "operator.h"
+#include "raw_stdin.h"
 #include "stack.h"
 
 /******************************** PRIVATE API *********************************/
@@ -42,17 +43,35 @@ int main(int argc, char **argv)
   retcode = calculator_test();
   printf("Calculator test: %s.\n", test_result_to_str(retcode));
 
-  retcode = list_test();
-  printf("List test: %s.\n", test_result_to_str(retcode));
+  if(retcode == true)
+  {
+    retcode = list_test();
+    printf("List test: %s.\n", test_result_to_str(retcode));
+  }
 
-  retcode = operand_test();
-  printf("Operand test: %s.\n", test_result_to_str(retcode));
+  if(retcode == true)
+  {
+    retcode = operand_test();
+    printf("Operand test: %s.\n", test_result_to_str(retcode));
+  }
 
-  retcode = operator_test();
-  printf("Operator test: %s.\n", test_result_to_str(retcode));
+  if(retcode == true)
+  {
+    retcode = operator_test();
+    printf("Operator test: %s.\n", test_result_to_str(retcode));
+  }
 
-  retcode = stack_test();
-  printf("Stack test: %s.\n", test_result_to_str(retcode));
+  if(retcode == true)
+  {
+    retcode = raw_stdin_test();
+    printf("Raw Console test: %s.\n", test_result_to_str(retcode));
+  }
+
+  if(retcode == true)
+  {
+    retcode = stack_test();
+    printf("Stack test: %s.\n", test_result_to_str(retcode));
+  }
 
   return 0;
 }

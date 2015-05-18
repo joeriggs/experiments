@@ -5,6 +5,8 @@
 
 /****************************** CLASS DEFINITION ******************************/
 
+typedef bool (*list_traverse_cb)(const void *cb_ctx, const void *object, int type);
+
 typedef struct list list;
 
 /********************************* PUBLIC API *********************************/
@@ -19,19 +21,19 @@ bool list_get_tail(list *this, void **object, int *type);
 
 bool list_del_tail(list *this);
 
-bool list_rem_head(list *this, void **object, int *type);
+bool list_del_all(list *this);
 
-typedef bool (*list_traverse_cb)(const void *cb_ctx, const void *object, int type);
+bool list_rem_head(list *this, void **object, int *type);
 
 bool list_traverse(list *this, list_traverse_cb cb, void *cb_obj);
 
 /********************************** TEST API **********************************/
 
-#if defined(DEBUG) || defined(TEST)
+#if defined(TEST)
 
 bool list_test(void);
 
-#endif // DEBUG || TEST
+#endif // TEST
 
 #endif // __LIST_H__
 

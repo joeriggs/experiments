@@ -1,4 +1,4 @@
-/* This is a simple implementation of a doubly-linked list.
+/* This is an implementation of a doubly-linked list.
  * 
  * Each item in the list contains an item "type" and a void pointer to an
  * object that contains the list item.
@@ -53,6 +53,7 @@ list_new(void)
 
   if(this != (list *) 0)
   {
+    /* Start with an empty list. */
     this->head = (list_item *) 0;
     this->tail = (list_item *) 0;
   }
@@ -76,13 +77,9 @@ list_delete(list *this)
 
   if(this != (list *) 0)
   {
-    while(this->tail != (list_item *) 0)
-    {
-      list_del_tail(this);
-    }
+    retcode = list_del_all(this);
 
     free(this);
-    retcode = true;
   }
 
   return retcode;
@@ -105,7 +102,7 @@ list_delete(list *this)
 bool
 list_add_tail(list *this, void *object, int type)
 {
-  bool retval = false;
+  bool retcode = false;
 
   /* Make sure there is an object. */
   if(this != (list *) 0)
@@ -137,11 +134,11 @@ list_add_tail(list *this, void *object, int type)
       }
 
       /* Success. */
-      retval = true;
+      retcode = true;
     }
   }
 
-  return retval;
+  return retcode;
 }
 
 /* Get the entry that is on the end of the list.  This is a nondestructive
@@ -156,7 +153,8 @@ list_add_tail(list *this, void *object, int type)
  *
  * Output:
  *   true  = success.  The last object was returned to the caller.
- *   false = failure.  The last object was NOT returned.
+ *   false = failure.  The last object was NOT returned.  Perhaps the list is
+ *                     empty.
  */
 bool
 list_get_tail(list *this, void **object, int *type)
@@ -192,7 +190,7 @@ list_del_tail(list *this)
   /* Make sure there is an object, and make sure the list isn't empty. */
   if( (this != (list *) 0) && (this->tail != (list_item *) 0) )
   {
-    /* l = the last item in the list.
+    /* l = the last item in the list (definitely NOT NULL).
      * p = the item before l (could be NULL). */
     list_item *l = this->tail;
     list_item *p = l->prev;
@@ -212,7 +210,7 @@ list_del_tail(list *this)
       this->tail = p;
     }
 
-    /* Get rid of l. */
+    /* l has been removed from the list.  Get rid of it. */
     free(l);
     retcode = true;
   }
@@ -220,7 +218,32 @@ list_del_tail(list *this)
   return retcode;
 }
 
-/* Remove the first entry from the list and return to the caller.
+/* Delete all of the entries from the list.  The list will still exist, but it
+ * will be empty.
+ *
+ * Input:
+ *   this = A pointer to the list object.
+ *
+ * Output:
+ *   true  = success.  The list is empty.
+ *   false = failure.  The state of the list is undefined.
+ */
+bool
+list_del_all(list *this)
+{
+  bool retcode = false;
+
+  /* Loop here and delete everything from the list. */
+  while(list_del_tail(this) == true);
+
+  /* Make sure the list is empty. */
+  void *object;
+  int type;
+  retcode = (list_get_tail(this, &object, &type) == false);
+  return retcode;
+}
+
+/* Remove the first entry from the list and return it to the caller.
  *
  * Input:
  *   this    = A pointer to the list object.
@@ -231,22 +254,22 @@ list_del_tail(list *this)
  *
  * Output:
  *   true  = success.  The list was NOT empty and the first entry was returned.
- *   false = an error occurred.
+ *   false = no entry is returned.  Perhaps the list is empty.
  */
 bool
 list_rem_head(list *this, void **object, int *type)
 {
-  bool retval = false;
+  bool retcode = false;
 
   /* Make sure there is an object, and make sure the list isn't empty. */
   if( (this != (list *) 0) && (this->head != (list_item *) 0) )
   {
-    /* f = the head item in the list.
+    /* f = the first item in the list (definitely NOT NULL).
      * n = the item after f (could be NULL). */
     list_item *f = this->head;
     list_item *n = f->next;
 
-    /* The last item on the list requires special processing. */
+    /* The final item on the list requires special processing. */
     if(n == (list_item *) 0)
     {
       this->head = this->tail = (list_item *) 0;
@@ -257,21 +280,24 @@ list_rem_head(list *this, void **object, int *type)
     else
     {
       this->head = n;
+      n->prev = (list_item *) 0;
     }
 
-    /* Return the contents of the entry, and then get rid of f. */
+    /* Return the contents of the entry, and then get rid of it. */
     *object = f->object;
     *type   = f->type;
     free(f);
 
-    retval = true;
+    retcode = true;
   }
 
-  return retval;
+  return retcode;
 }
 
-/* Traverse the list.  This could be useful for debug/test, or it could be used
- * to just scan the list to see what's in there.
+/* Traverse the list.  This method will traverse the list (from head to tail)
+ * and pass each entry in the list to a callback function.
+ *
+ * Note that it's okay if the cb deletes the entry from the list.
  *
  * Input:
  *   this   = A pointer to the list object.
@@ -295,15 +321,16 @@ list_traverse(list *this,
               list_traverse_cb cb,
               void *cb_ctx)
 {
-  bool retcode = false;
+  bool retcode = true;
 
   if(cb != (list_traverse_cb) 0)
   {
     list_item *i = this->head;
     while(i != (list_item *) 0)
     {
+      list_item *n = i->next;
       retcode = cb(cb_ctx, i->object, i->type);
-      i = i->next;
+      i = n;
     }
   }
 

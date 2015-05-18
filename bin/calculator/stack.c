@@ -1,5 +1,5 @@
 /* This is a very simple implementation of a stack.  Each item on the stack is
- * a single char.  It will be extended in the future.
+ * a single void *.
  */
 #include <stdio.h>
 #include <stdlib.h>
@@ -16,7 +16,7 @@
  ****************************** CLASS DEFINITION ******************************
  *****************************************************************************/
 
-/* This is the operand class. */
+/* This is the stack class. */
 struct stack {
   void **stack_data;
   int    stack_index;
@@ -62,8 +62,8 @@ stack_new(void)
  *   this = A pointer to the stack object.
  *
  * Output:
- *   Returns 0 if successful.
- *   Returns 1 if not successful.
+ *   true  = success.  this is deleted.
+ *   false = failure.  this is undefined.
  */
 bool
 stack_delete(stack *this)
@@ -84,7 +84,7 @@ stack_delete(stack *this)
   return retcode;
 }
 
-/* Push a single int onto the stack.
+/* Push a single item onto the stack.
  *
  * Input:
  *   this = A pointer to the stack object.
@@ -92,8 +92,8 @@ stack_delete(stack *this)
  *   i    = The value to push.
  *
  * Output:
- *   Returns true if success.  i is on the top of the stack.
- *   Returns false if failure.  The stack is unchanged.
+ *   true  = success.  i is on the top of the stack.
+ *   false = failure.  The value is not on the stack, and the stack is unchanged.
  */
 bool
 stack_push(stack *this,
@@ -102,28 +102,33 @@ stack_push(stack *this,
   bool retcode = true;
 
   /* If the stack is full, grow it. */
-  if((this->stack_index + 1) == this->stack_depth) {
-    /* If the stack is at full size, return an error. */
-    if(this->stack_depth >= STACK_DEPTH_MAX) {
-      printf("Stack is full.  Failing to push.\n");
+  if((this->stack_index + 1) == this->stack_depth)
+  {
+    /* If the stack is at its max size, return an error. */
+    if(this->stack_depth >= STACK_DEPTH_MAX)
+    {
       retcode = false;
     }
 
     /* If this is the first push allocate the first stack. */
-    else if(this->stack_data == (void **) 0) {
+    else if(this->stack_data == (void **) 0)
+    {
       this->stack_depth = 1;
-      this->stack_data = (void **) malloc(this->stack_depth * sizeof(int));
+      this->stack_data = (void **) malloc(this->stack_depth * sizeof(void *));
     }
 
     /* We already have a stack.  We need to grow it.  So we'll double it. */
-    else {
+    else
+    {
       this->stack_depth = this->stack_depth << 1;
-      this->stack_data = realloc(this->stack_data, this->stack_depth * sizeof(int));
+      this->stack_data = realloc(this->stack_data, this->stack_depth * sizeof(void *));
     }
 
     /* If we don't have a stack, fail now. */
-    if(this->stack_data == (void **) 0) {
-      printf("We don't have a stack.\n");
+    if(this->stack_data == (void **) 0)
+    {
+      this->stack_depth = 0;
+      this->stack_index = -1;
       retcode = false;
     }
   }
@@ -138,7 +143,7 @@ stack_push(stack *this,
   return retcode;
 }
 
-/* Pop a single int from the stack.
+/* Pop a single item from the stack.
  *
  * Input:
  *   this = A pointer to the stack object.
@@ -146,7 +151,7 @@ stack_push(stack *this,
  *   dest = Pointer to the location to pop into.
  *
  * Output:
- *   true  = success.  i contains the int from the top.  It is popped.
+ *   true  = success.  i contains the item from the top.  It is popped.
  *   false = failure.  The stack is empty.
  */
 bool
@@ -163,16 +168,16 @@ stack_pop(stack *this,
   return retcode;
 }
 
-/* Peek at the top int on the stack.
+/* Peek at the top item on the stack.
  *
  * Input:
  *   this = A pointer to the stack object.
  *
- *   dest = Pointer to the location to pop into.
+ *   dest = Pointer to the location to store the value into.
  *
  * Output:
- *   Returns 0 if success.  i contains the int from the top.  It is NOT popped.
- *   Returns 1 if failure.  The stack is empty.
+ *   true  = success.  i contains the item from the top.  It is NOT popped.
+ *   false = failure.  The stack is empty.
  */
 bool
 stack_peek(stack *this,

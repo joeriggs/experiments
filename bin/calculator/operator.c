@@ -46,7 +46,7 @@ static operator_property operator_properties[] = {
   {  0 ,  "",     op_type_none,    0,  0, 0, 0 }
 };
 
-/* This is the operator class. */
+/* This is the operator class.  Each object represents a single operator. */
 struct operator {
   /* This is a pointer to the operator_property that defines the operator. */
   operator_property *op_prop;
@@ -64,9 +64,9 @@ struct operator {
  *   c    = The one-character operator mnemonic.  All operators are one character.
  *
  * Output:
- *   true  = success.  *op_prop points to the operator_property that describes
- *                     the operator.
- *   false = failure.  *op_prop is undefined.
+ *   true  = success.  this->op_prop points to the operator_property that
+ *                     describes the operator.
+ *   false = failure.  this->op_prop is unchanged.
  */
 static bool
 operator_set_op_prop(operator *this,
@@ -101,7 +101,8 @@ operator_set_op_prop(operator *this,
  *
  * Output:
  *   Returns a pointer to the object.
- *   Returns 0 if unable to create the object.
+ *   Returns 0 if unable to create the object.  For example, if c is not a
+ *             recognized operator.
  */
 operator *
 operator_new(const char c)
@@ -123,8 +124,8 @@ operator_new(const char c)
  *   this = A pointer to the operator object.
  *
  * Output:
- *   Returns 0 if successful.
- *   Returns 1 if not successful.
+ *   true  = success.  The object is deleted.
+ *   false = failure.
  */
 bool
 operator_delete(operator *this)
@@ -140,7 +141,12 @@ operator_delete(operator *this)
   return retcode;
 }
 
-/* This function returns a value that represents the priority of an operator.
+/* This function returns a value that represents the precedence of an operator.
+ * Precedence deal with the order in which operators should be processed.
+ *
+ * The values are defined in operator_properties.  There are 2 precedence
+ * values for each operator.  They are both returned to the caller.  The caller
+ * knows how to use them.
  *
  * Input:
  *   this = A pointer to the operator object.
@@ -150,61 +156,80 @@ operator_delete(operator *this)
  *   stack = A pointer to a variable to will receive the stack precedence.
  *
  * Output:
- *   Returns 0 if successful.
- *   Returns 1 on failure.
+ *   true  = success.  *input and *stack are set appropriately.
+ *   false = failure.  *input and *stack are set to 0 (if they are valid ptrs).
  */
-int
+bool
 operator_precedence(operator *this,
                     int *input,
                     int *stack)
 {
-  int retcode = 1;
+  bool retcode = false;
 
-  if(this != (operator *) 0)
+  /* Make sure the parameters are valid, and set default values. */
+  if(input != (int *) 0)
+  {
+    *input = 0;
+  }
+  if(stack != (int *) 0)
+  {
+    *stack = 0;
+  }
+
+  if( (this != (operator *) 0) && (this->op_prop != (operator_property *) 0) )
   {
     *input = this->op_prop->input_precedence;
     *stack = this->op_prop->stack_precedence;
 
-    retcode = 0;
+    retcode = true;
   }
 
   return retcode;
 }
 
-/* Return the name of the operator object.
+/* Return the name of the operator object.  This refers to an ASCII string that
+ * describes the operator.  A lot of operators (like +, -, *, /) make sense,
+ * but some don't.  So we provide a name that the user will understand.
  *
  * Input:
  *   this    = A pointer to the operator object.
  *
- *   op_name = A ptr to a (char *) that will get the name of the operator.
+ *   op_name = A ptr to a (char *) that will be set to the name of the operator.
  *
  * Output:
- *   Returns 0 if successful.
- *   Returns 1 if unsuccessful.
+ *   true  = success. *op_name points to the name of the operator.
+ *   false = failure. *op_name points to "" (if it is a valid pointer).
  */
-int
+bool
 operator_get_name(operator *this,
                   const char **op_name)
 {
-  int retval = 1;
+  bool retcode = false;
 
-  if(this != (operator *) 0)
+  if(op_name != (const char **) 0)
   {
-    *op_name = this->op_prop->name;
-    retval = 0;
+    if( (this != (operator *) 0) && (this->op_prop != (operator_property *) 0) )
+    {
+      *op_name = this->op_prop->name;
+      retcode = true;
+    }
+    else
+    {
+      *op_name = (const char *) "";
+    }
   }
 
-  return retval;
+  return retcode;
 }
 
-/* Return whether the specified operand is binary or unary.
+/* Return the operator type (unary or binary).
  *
  * Input:
  *   this = A pointer to the operator object.
  *
  * Output:
  *   true  = success.  *type is set to the operand type.
- *   false = failure.  *type is set to op_type_none.
+ *   false = failure.  *type is set to op_type_none (if it is a valid pointer).
  */
 bool
 operator_get_op_type(operator *this,
@@ -217,9 +242,12 @@ operator_get_op_type(operator *this,
     if(this != (operator *) 0)
     {
       *type = this->op_prop->op_type;
+      retcode = true;
     }
-
-    retcode = true;
+    else
+    {
+      *type = op_type_none;
+    }
   }
 
   return retcode;
@@ -234,7 +262,7 @@ operator_get_op_type(operator *this,
  *
  * Output:
  *   true  = success.  The result is in op.
- *   false = failure.
+ *   false = failure.  op is undefined.
  */
 bool
 operator_do_unary(operator *this,
@@ -260,8 +288,8 @@ operator_do_unary(operator *this,
  *   op2  = A ptr to operand2.
  *
  * Output:
- *   true  = successful.
- *   false = unsuccessful.
+ *   true  = success.  The result is in op1.
+ *   false = failure.
  */
 bool
 operator_do_binary(operator *this,

@@ -21,11 +21,11 @@ bool stack_peek(stack *this, void **dest);
 
 /********************************** TEST API **********************************/
 
-#if defined(DEBUG) || defined(TEST)
+#if defined(TEST)
 
 bool stack_test(void);
 
-#endif // DEBUG || TEST
+#endif // TEST
 
 #endif // __STACK_H__
 
