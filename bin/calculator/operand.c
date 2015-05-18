@@ -268,6 +268,35 @@ operand_op_div(operand *op1,
 
   if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
   {
+    if(is_fp == false)
+    {
+      /* Divide by zero is an error. */
+      if(i2 == 0)
+      {
+        retcode = false;
+      }
+
+      /* Check to see if the result will be a float. */
+      else if((i1 % i2) != 0)
+      {
+        f1 = i1;
+        f2 = i2;
+        is_fp = true;
+      }
+
+      /* Do the regular integer division. */
+      else
+      {
+        i1 /= i2;
+        retcode = operand_set_val(op1, is_fp, i1, f1);
+      }
+    }
+
+    /* One (or more) of the following is true:
+     * 1. op1 is a float.
+     * 2. op2 is a float.
+     * 3. i1 / i2 would leave a remainder.
+     */
     if(is_fp == true)
     {
       if(f2 == 0)
@@ -277,18 +306,6 @@ operand_op_div(operand *op1,
       else
       {
         f1 /= f2;
-        retcode = operand_set_val(op1, is_fp, i1, f1);
-      }
-    }
-    else
-    {
-      if(i2 == 0)
-      {
-        retcode = false;
-      }
-      else
-      {
-        i1 /= i2;
         retcode = operand_set_val(op1, is_fp, i1, f1);
       }
     }
