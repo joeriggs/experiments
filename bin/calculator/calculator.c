@@ -728,10 +728,10 @@ calculator_test(void)
 //    { "7.4/10",      true,  true,  "2.387096" },
 //    { "2.5*2",       true,  true,         "5" },
   };
-  size_t infix_list_size = (sizeof(tests) / sizeof(infix_test));
+  size_t infix_test_size = (sizeof(tests) / sizeof(infix_test));
 
   int x;
-  for(x = 0; x < infix_list_size; x++)
+  for(x = 0; x < infix_test_size; x++)
   {
     infix_test *t = &tests[x];
 
