@@ -1,5 +1,6 @@
-# VI Tmp files.
+# VI tags and tmp files.
 .*.swp
+tags
 
 .gdbinit
 
