@@ -719,14 +719,14 @@ calculator_test(void)
     const char *result;
   } infix_test;
   infix_test tests[] = {
-    { "1+2*3",       true,  true,         "7" },
+    { "1+2*3",         true,  true,         "7" },
     { "\b10+20*30",    true,  true,       "610" },
     { "\b10/0+20*30", false,  false,         "" },
-//    { "(1+2)*3",     true,  true,         "9" },
-//    { "*3",          true,  true,        "27" },
-//    { "7/10",        true,  true,       "0.7" },
-//    { "7.4/10",      true,  true,  "2.387096" },
-//    { "2.5*2",       true,  true,         "5" },
+    { "(1+2)*3",       true,  true,         "9" },
+    { "*3",            true,  true,        "27" },
+    { "7/10",          true,  true,       "0.7" },
+    { "7.4/10",        true,  true,  "2.387096" },
+    { "2.5*2",         true,  true,         "5" },
   };
   size_t infix_test_size = (sizeof(tests) / sizeof(infix_test));
 
