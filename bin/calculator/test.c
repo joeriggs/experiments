@@ -10,6 +10,7 @@
 #include "common.h"
 
 #include "calculator.h"
+#include "fp_exponent.h"
 #include "list.h"
 #include "operand.h"
 #include "operator.h"
@@ -18,61 +19,69 @@
 
 /******************************** PRIVATE API *********************************/
 
-/* Return a string that indicates the result of a test.  All tests return a
- * boolean that indicates PASS (true) or FAIL (false).  This function simply
- * converts the boolean to a string that can be displayed.
+typedef bool (*test_func)(void);
+
+/* Run a test, print the result, and return a pass/fail status.  All tests
+ * return a boolean that indicates PASS (true) or FAIL (false).  This function
+ * converts the boolean to a string and dumps it to the console.
  *
  * Input:
- *   result = The boolean value to convert to a string.
+ *   name = An ASCII string that contains the name of the test.
+ *
+ *   test = A pointer to the test function.
  *
  * Output:
- *   Returns a string that indicates the PASS/FAIL result.
+ *   true  = success.  The test passed.
+ *   false = failure.  The test failed.
  */
-static const char *
-test_result_to_str(bool result)
+static bool
+test_run_one_test(const char *name,
+                  test_func   test)
 {
-  return (result == true) ? "PASS" : "FAIL";
+  bool retcode = test();
+  printf("%s: %s.\n", name, (retcode == true) ? "PASS" : "FAIL");
+  return retcode;
 }
 
 /********************************* PUBLIC API *********************************/
 
 int main(int argc, char **argv)
 {
-  bool retcode;
+  bool retcode = true;
 
-  retcode = calculator_test();
-  printf("Calculator test: %s.\n", test_result_to_str(retcode));
+  printf("Run tests.\n");
 
-  if(retcode == true)
+  /* Look through each of the unit tests.  Fail immediately if any of the tests
+   * fails. */
+  typedef struct unit_test {
+    const char *name;
+    test_func   func;
+  } unit_test;
+  unit_test tests[] = {
+//    { "Calculator",  calculator_test  },
+    { "FP Exponent", fp_exponent_test },
+    { "List",        list_test        },
+    { "Operand",     operand_test     },
+    { "Operator",    operator_test    },
+    { "Raw Console", raw_stdin_test   },
+    { "Stack",       stack_test       },
+  };
+  size_t tests_size = (sizeof(tests) / sizeof(unit_test));
+
+  int x;
+  for(x = 0; (x < tests_size) && (retcode == true); x++)
   {
-    retcode = list_test();
-    printf("List test: %s.\n", test_result_to_str(retcode));
+    unit_test *t = &tests[x];
+    retcode = test_run_one_test(t->name, t->func);
   }
 
   if(retcode == true)
   {
-    retcode = operand_test();
-    printf("Operand test: %s.\n", test_result_to_str(retcode));
+    return 0;
   }
-
-  if(retcode == true)
+  else
   {
-    retcode = operator_test();
-    printf("Operator test: %s.\n", test_result_to_str(retcode));
+    return 1;
   }
-
-  if(retcode == true)
-  {
-    retcode = raw_stdin_test();
-    printf("Raw Console test: %s.\n", test_result_to_str(retcode));
-  }
-
-  if(retcode == true)
-  {
-    retcode = stack_test();
-    printf("Stack test: %s.\n", test_result_to_str(retcode));
-  }
-
-  return 0;
 }
 

@@ -5,11 +5,17 @@
 
 /****************************** CLASS DEFINITION ******************************/
 
-typedef enum { false, true } bool;
+typedef struct fp_exponent fp_exponent;
 
 /********************************* PUBLIC API *********************************/
 
-bool fp_exponent_calc(double base, double exp, double *result);
+fp_exponent *fp_exponent_new(double base, double exp);
+
+bool fp_exponent_delete(fp_exponent *this);
+
+bool fp_exponent_calc(fp_exponent *this);
+
+bool fp_exponent_get_result(fp_exponent *this, double *result);
 
 /********************************** TEST API **********************************/
 
