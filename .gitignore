@@ -2,7 +2,9 @@
 .*.swp
 tags
 
+# Test and debug files.
 .gdbinit
+test
 
 *.o
 
