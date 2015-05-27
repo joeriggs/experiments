@@ -8,5 +8,11 @@
 /* Boolean type. */
 typedef enum { false, true }  bool;
 
+#if defined(DEBUG)
+#define DBG_PRINT printf
+#else
+#define DBG_PRINT(args...)
+#endif
+
 #endif // __COMMON_H__
 

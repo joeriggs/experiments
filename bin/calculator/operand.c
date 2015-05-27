@@ -8,6 +8,7 @@
 
 #include "common.h"
 
+#include "fp_exponent.h"
 #include "operand.h"
 
 /******************************************************************************
@@ -16,7 +17,7 @@
 
 /* This is the operand class. */
 struct operand {
-  uint64_t i_val;
+  int64_t  i_val;
   double   f_val;
   bool     got_decimal_point;
   double   fp_multiplier;
@@ -37,15 +38,19 @@ struct operand {
  *
  *   op2   = A pointer to the 2nd operand.
  *
- *   is_fp = Set to true if you need to do fp math.
+ *   is_fp = We set to true if you need to do fp math.
  *
- *   i1    = Gets the int value from op1 if (if_fp == false).
+ *   i1    = if (if_fp == true) = 0.
+ *           if (if_fp == false) = the int value from op1.
  *
- *   f1    = Gets the floating point value from op1 if (if_fp == true).
+ *   f1    = if (if_fp == true) = the fp value from op1.
+ *           if (if_fp == false) = the int value from op1.
  *
- *   i2    = Gets the int value from op2 if (if_fp == false).
+ *   i2    = if (if_fp == true) = 0.
+ *           if (if_fp == false) = the int value from op2.
  *
- *   f2    = Gets the floating point value from op2 if (if_fp == true).
+ *   f2    = if (if_fp == true) = the fp value from op2.
+ *           if (if_fp == false) = the int value from op2.
  *
  * Output:
  *   true  = success.
@@ -55,9 +60,9 @@ static bool
 operand_op_get_binary_ops(operand  *op1,
                           operand  *op2,
                           bool     *is_fp,
-                          uint64_t *i1,
+                          int64_t  *i1,
                           double   *f1,
-                          uint64_t *i2,
+                          int64_t  *i2,
                           double   *f2)
 {
   bool retcode = false;
@@ -74,6 +79,8 @@ operand_op_get_binary_ops(operand  *op1,
     }
     else
     {
+      *f1 = *i1;
+      *f2 = *i2;
       *is_fp = false;
     }
   }
@@ -101,7 +108,7 @@ operand_op_get_binary_ops(operand  *op1,
 static bool
 operand_set_val(operand  *this,
                 bool      is_fp,
-                uint64_t  i_val,
+                int64_t   i_val,
                 double    f_val)
 {
   bool retcode = false;
@@ -149,7 +156,7 @@ operand_op_add(operand *op1,
   bool retcode = false;
 
   bool is_fp;
-  uint64_t i1 = 0,   i2 = 0;
+  int64_t  i1 = 0,   i2 = 0;
   double   f1 = 0.0, f2 = 0.0;
 
   if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
@@ -187,7 +194,7 @@ operand_op_sub(operand *op1,
   bool retcode = false;
 
   bool is_fp;
-  uint64_t i1 = 0,   i2 = 0;
+  int64_t  i1 = 0,   i2 = 0;
   double   f1 = 0.0, f2 = 0.0;
 
   if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
@@ -225,7 +232,7 @@ operand_op_mul(operand *op1,
   bool retcode = false;
 
   bool is_fp;
-  uint64_t i1 = 0,   i2 = 0;
+  int64_t  i1 = 0,   i2 = 0;
   double   f1 = 0.0, f2 = 0.0;
 
   if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
@@ -263,7 +270,7 @@ operand_op_div(operand *op1,
   bool retcode = false;
 
   bool is_fp;
-  uint64_t i1 = 0,   i2 = 0;
+  int64_t  i1 = 0,   i2 = 0;
   double   f1 = 0.0, f2 = 0.0;
 
   if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
@@ -332,20 +339,38 @@ operand_op_exp(operand *op1,
   bool retcode = false;
 
   bool is_fp;
-  uint64_t i1 = 0,   i2 = 0;
+  int64_t  i1 = 0,   i2 = 0;
   double   f1 = 0.0, f2 = 0.0;
 
   if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
   {
-    if(is_fp == true)
+    /* If the exponent is a floating point number, or if the exponent is a
+     * negative number, then do the exponentiation as floating point. */
+    if( (is_fp == true) || (i2 < 0) )
     {
+      fp_exponent *fp = fp_exponent_new(f1, f2);
+      if(fp != (fp_exponent *) 0)
+      {
+        if((retcode = fp_exponent_calc(fp)) == true)
+        {
+          retcode = fp_exponent_get_result(fp, &f1);
+        }
+        retcode = (retcode == true) && (fp_exponent_delete(fp) == true);
+        is_fp = true;
+      }
     }
     else
     {
+      /* x^0 = 1 */
       if(i2 == 0)
       {
         i1 = 1;
       }
+      /* x^1 = x */
+      else if(i2 == 1)
+      {
+      }
+      /* Calculate x^n */
       else if(i2 > 1)
       {
         int i;
@@ -385,7 +410,7 @@ operand_op_and(operand *op1,
      (operand_get_base(op2, &base2) == true) && (base2 == operand_base_16))
   {
     bool is_fp;
-    uint64_t i1 = 0,   i2 = 0;
+    int64_t  i1 = 0,   i2 = 0;
     double   f1 = 0.0, f2 = 0.0;
 
     if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
@@ -420,7 +445,7 @@ operand_op_or(operand *op1,
      (operand_get_base(op2, &base2) == true) && (base2 == operand_base_16))
   {
     bool is_fp;
-    uint64_t i1 = 0,   i2 = 0;
+    int64_t  i1 = 0,   i2 = 0;
     double   f1 = 0.0, f2 = 0.0;
 
     if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
@@ -455,7 +480,7 @@ operand_op_xor(operand *op1,
      (operand_get_base(op2, &base2) == true) && (base2 == operand_base_16))
   {
     bool is_fp;
-    uint64_t i1 = 0,   i2 = 0;
+    int64_t  i1 = 0,   i2 = 0;
     double   f1 = 0.0, f2 = 0.0;
 
     if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
@@ -485,7 +510,7 @@ operand_op_not(operand *this)
   if((operand_get_base(this, &base) == true) && (base == operand_base_16))
   {
     bool is_fp;
-    uint64_t i;
+    int64_t  i;
     double   f;
 
     if((retcode = operand_get_val(this, &is_fp, &i, &f)) == true)
@@ -757,7 +782,7 @@ operand_add_char(operand *this,
 bool
 operand_get_val(operand  *this,
                 bool     *is_fp,
-                uint64_t *i_val,
+                int64_t  *i_val,
                 double   *f_val)
 {
   bool retcode = false;

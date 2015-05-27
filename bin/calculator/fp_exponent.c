@@ -26,12 +26,6 @@ struct fp_exponent {
  ******************************** PRIVATE API *********************************
  *****************************************************************************/
 
-#if defined(DEBUG)
-#define DBG_PRINT printf
-#else
-#define DBG_PRINT(args...)
-#endif
-
 /* Perform an exponentiation with a floating point base and an integer exponent.
  * We've already determined this->exp is a whole number, so we can do simple
  * exponent math.  We will calculate (this->base^this->exp).
@@ -110,7 +104,7 @@ fp_exponent_to_fraction(fp_exponent *this)
     {
       double root = fp_exponent_integer_exp(10.0, loop);
       double tmp_f1 = this->exp * root;
-      uint64_t tmp_i = (uint64_t) tmp_f1;
+      int64_t tmp_i = (int64_t) tmp_f1;
       double tmp_f2 = (double) tmp_i;
       if(tmp_f1 == tmp_f2)
       {
@@ -120,8 +114,6 @@ fp_exponent_to_fraction(fp_exponent *this)
         break;
       }
     }
-    DBG_PRINT("exp %f: this->exp_numerator %lld: this->exp_denominator %lld\n",
-                this->exp, this->exp_numerator, this->exp_denominator);
 
     if(retcode == true)
     {
@@ -169,7 +161,7 @@ fp_exponent_to_fraction(fp_exponent *this)
 }
 
 /* This is a very fast-converging nth root algorithm for finding the nth root
- * of A.  This member will return "Delta X_k".
+ * of A.
  *
  * Taken from http://en.wikipedia.org/wiki/Nth_root_algorithm
  *
@@ -196,32 +188,35 @@ fp_exponent_to_fraction(fp_exponent *this)
 static double
 fp_exponent_nth_root_guess(fp_exponent *this)
 {
-  double guess = 2;
+  double   A   = this->base;
+  uint64_t n   = this->exp_denominator;
+  DBG_PRINT("%s(): A %f: n %lld\n", __func__, A, n);
+  double X_k = 2;
 
   /* Solve the nth root (see description above). */
   int x;
-  for(x = 0; x < 100; x++)
+  for(x = 0; x < 1000; x++)
   {
     /*                       --------PART__4--------
      *                       -----PART__3----
      *             PART__1         -PART__2-
      * Delta X_k = (1 / n) * ((A / X_k^(n-1)) - X_k); X_k+1 = X_k + Delta X_k.
      */
-    double part1 = 1.0 / this->exp_denominator;
-    double part2 = fp_exponent_integer_exp(guess, (this->exp_denominator - 1));
-    double part3 = this->base / part2;
-    double part4 = part3 - guess;
-    double delta = part1 * part4;
-    if(delta == 0.0)
+    double part1 = 1.0 / n;
+    double part2 = fp_exponent_integer_exp(X_k, (n - 1));
+    double part3 = A / part2;
+    double part4 = part3 - X_k;
+    double delta_X_k = part1 * part4;
+    if(delta_X_k == 0.0)
     {
       break;
     }
-    guess += delta;
+    X_k += delta_X_k;
   }
-  DBG_PRINT("this->base %f: this->exp_denominator %lld: guess %f\n",
-             this->base, this->exp_denominator, guess);
+  DBG_PRINT("%s(): x %d: this->base %f: this->exp_denominator %lld: X_k %10.15f\n",
+             __func__, x, this->base, this->exp_denominator, X_k);
 
-  return guess;
+  return X_k;
 }
 
 /******************************************************************************
@@ -335,7 +330,7 @@ fp_exponent_calc(fp_exponent *this)
 
   /* Check to see if the exponent is a whole number.  If it is, then we can do
    * easy exponentiation. */
-  uint64_t tmp_exp_i = (uint64_t) this->exp;
+  int64_t tmp_exp_i  = (int64_t) this->exp;
   double   tmp_exp_f = (double) tmp_exp_i;
   if(this->exp == tmp_exp_f)
   {
@@ -346,20 +341,16 @@ fp_exponent_calc(fp_exponent *this)
   else
   {
     /* Convert the exponent to a fraction (numerator and denominator). */
-    retcode = fp_exponent_to_fraction(this);
-    DBG_PRINT("this->exp %f: this->exp_numerator %lld: this->exp_denominator %lld\n",
-               this->exp, this->exp_numerator, this->exp_denominator);
-
-    if(retcode == true)
+    if((retcode = fp_exponent_to_fraction(this)) == true)
     {
       /* Solve the nth root (see description above). */
       double guess = fp_exponent_nth_root_guess(this);
-      DBG_PRINT("this->base %f: this->exp_denominator %lld: guess %f\n",
-                 this->base, this->exp_denominator, guess);
+      DBG_PRINT("%s(): nth_root: this->base %f: this->exp_denominator %lld: guess %f\n",
+                 __func__, this->base, this->exp_denominator, guess);
 
       this->result = fp_exponent_integer_exp(guess, this->exp_numerator);
-      DBG_PRINT("guess %f: this->exp_numerator %lld: this->result %f\n",
-                  guess, this->exp_numerator, this->result);
+      DBG_PRINT("%s(): exp: guess %f: this->exp_numerator %lld: this->result %f\n",
+                  __func__, guess, this->exp_numerator, this->result);
     }
   }
 
@@ -413,11 +404,12 @@ fp_exponent_test(void)
     double result;
   } fp_exponent_test;
   fp_exponent_test tests[] = {
-    { 2.0,   3.0,   8.0               },
-    { 2.0,  -3.0,   0.125             },
-    { 2.34,  3.45, 18.784286696359032 },
-    { 2.0,   3.5,  11.313708498984754 },
-    { 2.0,   3.6,  12.125732532083205 },
+    { 2.0,   3.0,    8.0               },
+    { 2.0,  -3.0,    0.125             },
+    { 2.0,  -2.3456, 0.196745153116215 },
+    { 2.34,  3.45,  18.784286696359032 },
+    { 2.0,   3.5,   11.313708498984754 },
+    { 2.0,   3.6,   12.125732532083205 },
   };
   size_t tests_size = (sizeof(tests) / sizeof(fp_exponent_test));
 

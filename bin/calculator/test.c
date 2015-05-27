@@ -58,7 +58,7 @@ int main(int argc, char **argv)
     test_func   func;
   } unit_test;
   unit_test tests[] = {
-//    { "Calculator",  calculator_test  },
+    { "Calculator",  calculator_test  },
     { "FP Exponent", fp_exponent_test },
     { "List",        list_test        },
     { "Operand",     operand_test     },

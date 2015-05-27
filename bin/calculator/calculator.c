@@ -297,7 +297,7 @@ calculator_get_console_trv_cb(const void *ctx,
       {
         operand *cur_operand = (operand *) object;
         bool     is_fp;
-        uint64_t i_val;
+        int64_t  i_val;
         double   f_val;
         if((retcode = operand_get_val(cur_operand, &is_fp, &i_val, &f_val)) == true)
         {
@@ -693,21 +693,21 @@ bool
 calculator_test(void)
 {
   /* Make sure an empty calculator_delete() fails. */
-  printf("calculator_delete(0)\n");
+  DBG_PRINT("calculator_delete(0)\n");
   if(calculator_delete((calculator *) 0) != false)                                   return false;
 
   /* Create a calculator object. */
-  printf("calculator_new()\n");
+  DBG_PRINT("calculator_new()\n");
   calculator *this = calculator_new();
   if(this == (calculator *) 0)                                                       return false;
 
   /* Test switching the base back and forth. */
-  printf("calculator_get_base()\n");
+  DBG_PRINT("calculator_get_base()\n");
   calculator_base base;
   if((calculator_get_base(this, &base) != true) || (base != calculator_base_10))     return false;
-  printf("calculator_set_base(calculator_base_16)\n");
+  DBG_PRINT("calculator_set_base(calculator_base_16)\n");
   if(calculator_set_base(this, calculator_base_16) != true)                          return false;
-  printf("calculator_set_base(calculator_base_10)\n");
+  DBG_PRINT("calculator_set_base(calculator_base_10)\n");
   if(calculator_set_base(this, calculator_base_10) != true)                          return false;
 
   /* Loop through some math problems.  This tests the basic functionality of
@@ -719,14 +719,19 @@ calculator_test(void)
     const char *result;
   } infix_test;
   infix_test tests[] = {
-    { "1+2*3",         true,  true,         "7" },
-    { "\b10+20*30",    true,  true,       "610" },
-    { "\b10/0+20*30", false,  false,         "" },
-    { "(1+2)*3",       true,  true,         "9" },
-    { "*3",            true,  true,        "27" },
-    { "7/10",          true,  true,       "0.7" },
-    { "7.4/10",        true,  true,  "2.387096" },
-    { "2.5*2",         true,  true,         "5" },
+    { "1+2*3",           true,  true,      "7"            }, // Order of operations.
+    { "\b10+20*30",      true,  true,    "610"            }, // Order of operations.
+//    { "\b10/0+20*30",   false, false,       ""            }, // Divide by zero.
+//    { "(1+2)*3",         true,  true,      "9"            }, // Parentheses override order.
+//    { "*3",              true,  true,     "27"            }, // Follow-on to the previous result.
+    { "\b7/10",          true,  true,      "0.7"          }, // int / int = float.
+    { "\b7.4/10",        true,  true,      "0.74"         }, // float / int.
+    { "\b2.5*2",         true,  true,      "5"            }, // float * int.
+    { "\b2^3",           true,  true,      "8"            }, // int ^ int.
+    { "\b2^3s",          true,  true,      "0.125000"     }, // int ^ -int.
+    { "\b2.34^5",        true,  true,     "70.1583371424" }, // float ^ int.
+    { "\b3^12.345",      true,  true, "776357.74428398"   }, // int ^ float.
+    { "\b2.34^5.678",    true,  true,    "124.8554885559" }, // float ^ float.
   };
   size_t infix_test_size = (sizeof(tests) / sizeof(infix_test));
 
@@ -743,20 +748,20 @@ calculator_test(void)
     }
 
     /* Traverse the infix list as decimal. */
-    printf("calculator_get_console(1)\n");
+    DBG_PRINT("calculator_get_console(1)\n");
     char buf[1024];
     this->console_buf[0] = 0;
     if(calculator_get_console(this, buf, sizeof(buf)) != true)                       return false;
-    printf("'%s'\n", buf);
+    DBG_PRINT("'%s'\n", buf);
 
     if(calculator_infix2postfix(this) != true)                                       return false;
     if(calculator_postfix(this) != t->postfix_retcode)                               return false;
     if(calculator_get_console(this, buf, sizeof(buf)) != t->console_retcode)         return false;
-    if(t->console_retcode == true) printf("console_result: '%s'\n", buf);
+    if(t->console_retcode == true) printf(" = '%s'\n", buf);
     if(strcmp(buf, t->result) != 0)                                                  return false;
   }
 
-  printf("calculator_delete(this)\n");
+  DBG_PRINT("calculator_delete(this)\n");
   if(calculator_delete(this) != true)                                                return false;
 
   return true;

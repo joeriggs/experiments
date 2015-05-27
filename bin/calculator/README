@@ -11,15 +11,18 @@ Tested on the following platforms:
 
 The class heirarchy looks like this:
 
-   ---------------------------------------------------------------
-  |                             main()                            |
-   ---------------------------------------------------------------
-   -----------  --------------------------------------------------
-  | raw_stdin ||                    calculator                    |
-   -----------  --------------------------------------------------
-                -----------  -----------  -----------  -----------
-               |   list    ||  operand  || operator  ||   stack   |
-                -----------  -----------  -----------  -----------
+   -----------------------------------------------------------------------
+  |                                 main()                                |
+   -----------------------------------------------------------------------
+   -------------  --------------------------------------------------------
+  |  raw_stdin  ||                       calculator                       |
+   -------------  --------------------------------------------------------
+                -------------  -------------  -------------  -------------
+               |    list     ||   operand   ||  operator   ||    stack    |
+                -------------  -------------  -------------  -------------
+                               -------------
+                              | fp_exponent |
+                               -------------
 
   * main() provides the text-based user interface.  If you want to replace the
     text-based user interface with something more sophisticated, then you will
@@ -39,6 +42,10 @@ The class heirarchy looks like this:
 
     * operand is used to store each operand.  It contains members that know how
       to manipulate the numeric operands.
+
+      * fp_exponent is used to perform exponent operations when the exponent is
+        a floating point number or a negative number.  All integer exponent
+        operations are handled by the operand class.
 
     * operator is used to store each operator.  It contains members that know
       how to execute the steps necessary to perform the operator.

@@ -43,7 +43,7 @@ bool operand_set_base(operand *this, operand_base base);
 
 bool operand_add_char(operand *this, char c);
 
-bool operand_get_val(operand *this, bool *is_fp, uint64_t *i_val, double *f_val);
+bool operand_get_val(operand *this, bool *is_fp, int64_t *i_val, double *f_val);
 
 /********************************** TEST API **********************************/
 
