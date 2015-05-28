@@ -45,6 +45,8 @@ bool operand_add_char(operand *this, char c);
 
 bool operand_get_val(operand *this, bool *is_fp, int64_t *i_val, double *f_val);
 
+bool operand_to_str(operand *this, char *buf, size_t buf_size);
+
 /********************************** TEST API **********************************/
 
 #if defined(TEST)

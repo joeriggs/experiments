@@ -294,34 +294,12 @@ calculator_get_console_trv_cb(const void *ctx,
     switch(type)
     {
     case LIST_OBJ_TYPE_OPERAND:
+      if(buf_is_empty == false)
       {
-        operand *cur_operand = (operand *) object;
-        bool     is_fp;
-        int64_t  i_val;
-        double   f_val;
-        if((retcode = operand_get_val(cur_operand, &is_fp, &i_val, &f_val)) == true)
-        {
-          if(is_fp)
-          {
-            snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%f" : " %f", f_val);
-          }
-          else
-          {
-            calculator_base base;
-            if((retcode = calculator_get_base(this, &base)) == true)
-            {
-              if(base == calculator_base_16)
-              {
-                snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%llX" : " %llX", (long long) i_val);
-              }
-              else
-              {
-                snprintf(buf_dst, buf_dst_max, buf_is_empty ? "%lld" : " %lld", (long long) i_val);
-              }
-            }
-          }
-        }
+        *(buf_dst++) = ' ';
+        buf_is_empty = (--buf_dst_max == 0) ? true : false;
       }
+      retcode = operand_to_str((operand *) object, buf_dst, buf_dst_max);
       break;
 
     case LIST_OBJ_TYPE_OPERATOR:
@@ -712,13 +690,13 @@ calculator_test(void)
 
   /* Loop through some math problems.  This tests the basic functionality of
    * the calculator.  We're checking to make sure it can do math. */
-  typedef struct infix_test {
+  typedef struct calculator_test {
     const char *infix;
     bool        postfix_retcode;
     bool        console_retcode;
     const char *result;
-  } infix_test;
-  infix_test tests[] = {
+  } calculator_test;
+  calculator_test tests[] = {
     { "1+2*3",           true,  true,      "7"            }, // Order of operations.
     { "\b10+20*30",      true,  true,    "610"            }, // Order of operations.
 //    { "\b10/0+20*30",   false, false,       ""            }, // Divide by zero.
@@ -733,12 +711,12 @@ calculator_test(void)
     { "\b3^12.345",      true,  true, "776357.74428398"   }, // int ^ float.
     { "\b2.34^5.678",    true,  true,    "124.8554885559" }, // float ^ float.
   };
-  size_t infix_test_size = (sizeof(tests) / sizeof(infix_test));
+  size_t calculator_test_size = (sizeof(tests) / sizeof(calculator_test));
 
   int x;
-  for(x = 0; x < infix_test_size; x++)
+  for(x = 0; x < calculator_test_size; x++)
   {
-    infix_test *t = &tests[x];
+    calculator_test *t = &tests[x];
 
     const char *infix = t->infix;
     printf("%s\n", infix);

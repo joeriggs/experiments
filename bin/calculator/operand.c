@@ -5,6 +5,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include "common.h"
 
@@ -40,17 +41,17 @@ struct operand {
  *
  *   is_fp = We set to true if you need to do fp math.
  *
- *   i1    = if (if_fp == true) = 0.
- *           if (if_fp == false) = the int value from op1.
+ *   i1    = A pointer to an integer.  It is set to the integer value that is
+ *           returned from operand_get_val(op1).
  *
- *   f1    = if (if_fp == true) = the fp value from op1.
- *           if (if_fp == false) = the int value from op1.
+ *   f1    = A pointer to a float.  It is set to the floating point value that
+ *           is returned from operand_get_val(op1).
  *
- *   i2    = if (if_fp == true) = 0.
- *           if (if_fp == false) = the int value from op2.
+ *   i2    = A pointer to an integer.  It is set to the integer value that is
+ *           returned from operand_get_val(op2).
  *
- *   f2    = if (if_fp == true) = the fp value from op2.
- *           if (if_fp == false) = the int value from op2.
+ *   f1    = A pointer to a float.  It is set to the floating point value that
+ *           is returned from operand_get_val(op2).
  *
  * Output:
  *   true  = success.
@@ -769,11 +770,13 @@ operand_add_char(operand *this,
  *
  *   is_fp = A ptr to a bool that is set to true if the operand is a float.
  *
- *   i_val = A ptr to an integer.  It is set to the value of the object if
- *           is_fp == false.
+ *   i_val = A ptr to an integer.
+ *           if (is_fp == true)  = 0.
+ *           if (is_fp == false) = the int value of the operand.
  *
- *   f_val = A ptr to a float.  It is set to the value of the object if
- *           is_fp == true.
+ *   f_val = A ptr to a float.
+ *           if (is_fp == true)  = the fp value of the operand.
+ *           if (is_fp == false) = the int value of the operand.
  *
  * Output:
  *   true  = success.
@@ -791,14 +794,67 @@ operand_get_val(operand  *this,
   {
     if((*is_fp = this->got_decimal_point) == true)
     {
+      *i_val = 0;
       *f_val = this->f_val;
     }
     else
     {
       *i_val = this->i_val;
+      *f_val = this->i_val;
     }
 
     retcode = true;
+  }
+
+  return retcode;
+}
+
+/* Create an ASCII string the represents the current value of the operand.
+ *
+ * Input:
+ *   this     = A pointer to the operand object.
+ *
+ *   buf      = The caller-supplied buffer to build the string in.
+ *
+ *   buf_size = The size of buf.  Note that we must allow 1 byte for the NULL
+ *              terminator.
+ *
+ * Output:
+ *   true  = success.  buf contains the string.  Note that it might be
+ *                     truncated if buf is too small to hold the entire size of
+ *                     the string.
+ *   false = failure.  buf is undefined.
+ */
+bool operand_to_str(operand *this,
+                    char *buf,
+                    size_t buf_size)
+{
+  bool retcode = false;
+
+  bool     is_fp;
+  int64_t  i_val;
+  double   f_val;
+  if((retcode = operand_get_val(this, &is_fp, &i_val, &f_val)) == true)
+  {
+    if(is_fp)
+    {
+      snprintf(buf, buf_size, "%1.40f", f_val);
+    }
+    else
+    {
+      operand_base base;
+      if((retcode = operand_get_base(this, &base)) == true)
+      {
+        if(base == operand_base_16)
+        {
+          snprintf(buf, buf_size, "%llX", (long long) i_val);
+        }
+        else
+        {
+          snprintf(buf, buf_size, "%lld", (long long) i_val);
+        }
+      }
+    }
   }
 
   return retcode;
@@ -812,16 +868,66 @@ operand_get_val(operand  *this,
 bool
 operand_test(void)
 {
-  bool retcode = false;
+  printf("%s():\n", __func__);
 
-  operand *this = operand_new(operand_base_10);
-  if(this != (operand *) 0)
+  /* Loop through some assorted operand patterns.  This tests the basic
+   * functionality of the operand class.  We're checking to make sure it can
+   * handle the types of numbers that we support. */
+  typedef struct operand_test {
+    const char  *str;
+    operand_base base;
+    bool         is_fp;
+    int64_t      i_val;
+    double       f_val;
+  } operand_test;
+  operand_test tests[] = {
+    { "123",     operand_base_10, false,  123, 123.0   }, // Simple integer value.
+    { "123.456", operand_base_10,  true,    0, 123.456 }, // Simple floating point value.
+  };
+  size_t operand_test_size = (sizeof(tests) / sizeof(operand_test));
+
+  int x;
+  for(x = 0; x < operand_test_size; x++)
   {
-    operand_delete(this);
-    retcode = true;
+    operand_test *t = &tests[x];
+    printf("  %s\n", t->str);
+
+    DBG_PRINT("operand_new()\n");
+    operand *this;
+    if((this = operand_new(t->base)) == (operand *) 0)               return false;
+
+    const char *str = t->str;
+    while(*str)
+    {
+      DBG_PRINT("operand_add_char()\n");
+      if(operand_add_char(this, *str++) != true)                     return false;
+    }
+
+    DBG_PRINT("operand_get_base()\n");
+    operand_base base;
+    if(operand_get_base(this, &base) != true)                        return false;
+    if(base != t->base)                                              return false;
+
+    DBG_PRINT("operand_get_val()\n");
+    bool is_fp;
+    int64_t i_val;
+    double f_val;
+    if(operand_get_val(this, &is_fp, &i_val, &f_val) != true)        return false;
+    if(is_fp != t->is_fp)                                            return false;
+    if(i_val != t->i_val)                                            return false;
+    if(f_val != t->f_val)                                            return false;
+
+    DBG_PRINT("operand_to_str()\n");
+    char result[1024];
+    if(operand_to_str(this, result, sizeof(result)) != true)         return false;
+    DBG_PRINT("  str = '%s'.\n", result);
+    if(strcmp(result, t->str) != 0)                                  return false;
+
+    DBG_PRINT("operand_delete()\n");
+    if(operand_delete(this) != true)                                 return false;
   }
 
-  return retcode;
+  return true;
 }
 #endif // TEST
 
