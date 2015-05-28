@@ -1,0 +1,186 @@
+
+================== C Implementation of Prototype Calculator. ==================
+
+- Basic implementation:
+  + Convert stack so it accepts native pointers.
+  + Left/Right associativity, to allow for processing 2^3^4 exponentiation.
+  + 1+2*3^4 crash.
+  + Fix floating numbers.  They get corrupted.
+  + Change stack to accept native pointers.
+  + Pass the current calculator value back to the caller.
+    + Change calculator UI to display a small window with calculator output.
+  + Implement more decimal operators:
+    + Subtraction
+    + Division
+      + Prevent divide by zero.
+  + 1+2+3= failure.
+  + 'h' display in main.c  This will be useful to explain how to switch into
+    and out of hex mode.
+  + New function that creates the "-->  <--" display.
+    + Gets the calculator display.
+    + Builds message and displays.
+    + Display "hex" or "dec" as "-- hex -->  <--" on the display.
+      + calculator::get_operand_mode() method to get mode.
+  + HEX mode.
+    + Add 'm' command to cmdline UI.
+      + calculator::set_operand_mode() method.
+        + Walks both lists and converts all operands to the new base.
+          + Floats converted to ints if switching to hex mode.
+          + Multipliers adjusted.
+        + operand::operand_add_char() uses the flag to determine how to add
+          the char:
+          + '.' not allowed in hex mode.
+          + 'a-f' not allowed in decimal mode.
+          + Float not allowed in hex mode.
+          + Multiplier is either 10 or 16.
+    + Hex operators:
+      + Bitwise AND
+      + Bitwise OR
+      + Bitwise XOR
+      + Bitwise Neg (Unary).
+      + Add them to the help menu.
+  + Negative numbers.
+    + operand::operand_add_char() accepts 's' as the sign.
+    + operand::operand_add_char() effectively does (0 - this->[fd]_val).
+  + Fix 1234567890 * 3 (probably wrapped at 31 bits (signed)).
+    + Convert operand class to use uint64_t instead of int.
+  + Change the way we get the base.  Right now we check the retcode and pick a
+    default if the getter fails.  We need to fail if we can't get the base.
+    + Clean up all of the functions that call operand and calculator base.
+    + Come up with a consistent name for the base.  Call it "base".
+    + Get rid of comments about "the allowed values are base_10 and base_16".
+    + switch statements used by callers fail on "default".
+    + Modify the traverse functions to return a bool.
+      + Fix all callers of list_traverse.
+  + Divide by zero needs to be fixed.  If the infix_list is empty, we have an
+    error (divide by zero should flush infix and postfix lists).
+  + Testing.  Don't kill it.  Just look for obvious failures.  In particular
+    look for add/sub/mul/div/exp errors.
+    + Include testing of fp numbers for add/sub/mul/div.
+
+- Bugs:
+  + "7 / 10 =" produces integer result.  Need to check (i1 % i2).
+  - "10 / 0 =" doesn't report an error.
+
+- Enhanced implementation:
+  + Make a pass over the source code and look for things to clean up.  Fix
+    them or add them to this list.
+    + Standardize return values.  For example, use bool to show pass/fail.
+    + Make sure all classes have a delete function.
+    + Remove the associative (left/right) data from operator properties.
+    + Change operand class to use "uint64_t" instead of "int".
+  + A lot of the code in the "op" functions in operand.c is cut&paste.  Create
+    a series of common functions that can do things like "verify" & "extra" so
+    the "op" functions can be stripped down to a smaller size.
+    + Should have a setter function to write the value back into the object.
+  + Change the operand_op functions to use the get/set functions to get the
+    operands and store the modified values back in.
+  + infix2postfix and postfix need to check return codes from all of the
+    various member calls.
+  + For failures like divide by zero, clean the infix and postfix lists.
+  + Eponentiation so it does negatives and floats.
+    + Create class definition.
+      + Set up comment blocks like calculator.c.
+      + Header file like calculator.h.
+    + Test framework.
+      + Use calculator.c as a template.
+    + Better code that converts the fp to a fraction.
+      + Look for a better way.
+      + Reduce (34/10 -> 17/5).
+    + Make sure it's working with negative exponents.
+      + Negative integer.
+        + "2^-3" in the calulator hangs.
+      + Negative floating point.
+        + "2^-2.3456" in the fp_exponent test program returns 0.0.
+    + Hook into the calculator's operand.c class.
+  - Create operand::to_str() member.  Then move that functionality from
+    calculator.c to operand.c
+    + Clean up calculator::get_console_trv_cb() so it calls operand::to_str()
+      to get each string.
+    - Fix fp output.  Get rid of trailing zeroes.
+      - Why does operand_add_char() turn 123.456 into 123.45600000111111?
+        - Create a test program that contains some doubles.  Init them as:
+          "double foo = 123.456".  See what it looks like.
+    - In decimal mode, display base_1000 (1,000,000,000) format.
+  - Detect overflow of int and fp operands.  Operations can overflow, but
+    adding a character can't.  Silently drop the character if overflow would
+    happen.
+    - Figure out int64_t and double min/max.
+  - Standardize test programs to return 0 for success and 1 for failure.
+    - Move DBG_PRINT from fp_exponent.c to common.h.
+      - Add DBG_PRINT statements to classes.
+      - Convert printf() to DBG_PRINT.
+  - Parentheses:
+    - Don't put them in the postfix equation.
+    - Balance checking.
+    - Implement operators:
+      - Open parentheses - Probably a NOP.
+      - Close parentheses - Probably a NOP.
+    - Add tests to calculator.c.
+      - "(1+2)*3".
+      - "(10+20)*(30+40".
+      - "5+(10)"
+      - "200+()*3" = 600.
+      - "11*)" = ERROR.
+      - "7*(2+9" = ERROR
+  - After pressing '=', wipe out the operand at the head of the infix_list if
+    the user enters a new operand.
+    - Change the operand class to have "flags" that indicate:
+      - Decimal point found.
+      - Base10 or Base16.
+      - Error.
+      - "Internal".  Comes in handy after pressing '=' to know if we can
+        append characters to the current operand or whether we need to blow it
+        away and start with a new one.  You can't append to a result.
+    - This can also be used to implement a "C" button.
+      - Create calculator::reset().
+        - Puts an empty operand at the beginning of infix_list.  Sets the
+          flags to indicate it's an internal operand.
+        - Call calculator::reset() from calculator::new().
+    - This can also be used when we add functionality for processing the
+      equation on the fly.  The interim (running) total will be an internal
+      operand.  The user can't modify it.
+    - Don't assume the first token in an equation is an operand.  It could also
+      be an open parentheses.  This is a code inspection task.  Check to make
+      sure the backspace code doesn't add an operand if the infix_list is
+      empty.
+  - Hex operators:
+    - Modulus
+    - Shift Left
+    - Shift Right
+    - Rotate Left
+    - Rotate Right
+  - Parser to make sure equation is valid.
+  - Change operand class to support configurable word size.
+    - HEX mode only.  Disabled in decimal mode.
+    - operand::operand_set_word_size(int size) (8, 16, 32, 64, 128).
+    - operand::operand_add_char() uses word size.
+    - Add a status indicator as "-- hex -- 8-bit -->  <--" to console.
+  - calculator class mode that processes the equation in real time:
+    - Configurable by the user.
+      - Change cmdline UI to have a 'p' ('p' is for processing) switch.
+      - calculator::set_processing_mode() method.
+    - Parse the infix each time we get an operator.
+    - Change calculator class to return the top of the operand stack each
+      time we get a new operator.
+  - Should we disable 's' in Hex mode?  Or should we create a signed/unsigned
+    option for Hex mode?
+  - Check to make sure we're deleting the operator and operand objects when
+    we're done with them in postfix.
+
+- Cleanup, refactoring, and beautification:
+  - Change classes so you can say "stack this" instead of "stack *this".
+  - Change raw_stdin class to "console" class.
+    - Add the stderr display stuff as a method.
+    - Add signal handler for CTRL-C.
+
+- Unit Testing:
+  - Create extremely robust TDD-style tests for each class.
+
+- System Testing:
+  - Run a memory leak tool to check for leaks.
+  - Multi-platform testing.
+  - Connect to Codeship.
+
+=============== End of C Implementation of Prototype Calculator. ==============
+
