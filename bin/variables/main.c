@@ -5,6 +5,27 @@
 #include <stdint.h>
 #include <stdio.h>
 
+typedef union {
+  float    f;
+  uint32_t u;
+  struct {
+    uint32_t fraction:23;
+    uint32_t exponent:8;
+    uint32_t sign:1;
+  } ieee;
+} float_t;
+
+typedef union {
+  double   d;
+  uint64_t u;
+  struct {
+    uint64_t fraction2:32;
+    uint64_t fraction1:20;
+    uint64_t exponent:11;
+    uint64_t sign:1;
+  } ieee;
+} double_t;
+
 /* Binary output */
 static void
 disp_bin(void  *data,
@@ -33,19 +54,59 @@ disp_hex(const char *data_name,
   /* Hex output. */
   if(data_size == sizeof(uint64_t))
   {
-    double *d1 = (double *) data;
-    printf("  dec: %5.40f\n", *d1);
-
-    uint64_t *ui = (uint64_t *) data;
-    printf("  hex: %08llX\n", *ui);
+    double_t *d = (double_t *) data;
+    printf("  d->d             = %f\n",   d->d);
+    printf("  d->u             = %llX\n", d->u);
+    printf("  d->ieee.sign     = %X\n",   d->ieee.sign);
+    printf("  d->ieee.exponent = %X\n",   d->ieee.exponent);
+    printf("  d->ieee.fraction = %X%X\n", d->ieee.fraction1, d->ieee.fraction2);
   }
   else if(data_size == sizeof(uint32_t))
   {
-    float *f1 = (float *) data;
-    printf("  dec: %5.40f\n", *f1);
+    float_t *f = (float_t *) data;
+    printf("  f->f             = %f\n", f->f);
+    printf("  f->u             = %X\n", f->u);
+    printf("  f->ieee.sign     = %X\n", f->ieee.sign);
+    printf("  f->ieee.exponent = %X\n", f->ieee.exponent);
+    printf("  f->ieee.fraction = %X\n", f->ieee.fraction);
 
-    uint32_t *ui = (uint32_t *) data;
-    printf("  hex: %04X\n", *ui);
+    /* Convert back to decimal. */
+    float new_val = 0.0;
+    int exp = f->ieee.exponent - 127;
+    uint32_t frac = (1 << 23) | f->ieee.fraction;
+    int i = 0x00800000;
+    int first_val = 1;
+    printf("  re-calc: ");
+    while(i > 0)
+    {
+      if(frac & i)
+      {
+        if(first_val == 0)
+        {
+          printf(" + ");
+        }
+        first_val = 0;
+
+        if(exp >= 0)
+        {
+          printf("%d", (1 << exp));
+          new_val += (1 << exp);
+        }
+        else
+        {
+          printf("1/%d", (1 << (0 - exp)));
+          new_val += (1.0 / (1 << (0 - exp)));
+        }
+      }
+      i >>= 1;
+      exp--;
+    }
+    printf("\n");
+    if(f->ieee.sign == 1)
+    {
+      new_val = 0.0 - new_val;
+    }
+    printf("  re-calc'ed val: %f\n", new_val);
   }
 
   disp_bin(data, data_size);
@@ -55,29 +116,21 @@ int main(int argc, char **argv)
 {
   printf("Examine integer and floating point variables.\n");
 
-  /* Initialize an entire double at one time. */
+  /* A positive value. */
   double d1 = 123.456;
   disp_hex("d1", &d1, sizeof(d1));
 
-  /* Add the decimal values one at a time. */
-  int64_t i2 = 123;
-  double d2 = i2;
-  double multiplier = 0.10;
-  unsigned char vals[] = { 4, 5, 6 };
-  int i;
-  for(i = 0; i < sizeof(vals); i++)
-  {
-    unsigned char c = vals[i];
-    double d = c;
-    d *= multiplier;
-    d2 += d;
-    multiplier /= 10.0;
-  }
+  /* A negative value. */
+  double d2 = -14.57;
   disp_hex("d2", &d2, sizeof(d2));
 
   /* Try a regular float. */
   float f1 = 123.456;
   disp_hex("f1", &f1, sizeof(f1));
+
+  /* And a negative float. */
+  float f2 = -14.57;
+  disp_hex("f2", &f2, sizeof(f2));
 
   return 0;
 }
