@@ -50,25 +50,26 @@ disp_hex(const char *data_name,
          size_t      data_size)
 {
   printf("\n%s: size %d:\n", data_name, data_size);
+  disp_bin(data, data_size);
 
   /* Hex output. */
   if(data_size == sizeof(uint64_t))
   {
     double_t *d = (double_t *) data;
-    printf("  d->d             = %f\n",   d->d);
-    printf("  d->u             = %llX\n", d->u);
-    printf("  d->ieee.sign     = %X\n",   d->ieee.sign);
-    printf("  d->ieee.exponent = %X\n",   d->ieee.exponent);
-    printf("  d->ieee.fraction = %X%X\n", d->ieee.fraction1, d->ieee.fraction2);
+    printf("  double        = %f\n",     d->d);
+    printf("  hex           = 0x%llX\n", d->u);
+    printf("  IEEE sign     = 0x%X\n",   d->ieee.sign);
+    printf("  IEEE exponent = 0x%X\n",   d->ieee.exponent);
+    printf("  IEEE fraction = 0x%X%X\n", d->ieee.fraction1, d->ieee.fraction2);
   }
   else if(data_size == sizeof(uint32_t))
   {
     float_t *f = (float_t *) data;
-    printf("  f->f             = %f\n", f->f);
-    printf("  f->u             = %X\n", f->u);
-    printf("  f->ieee.sign     = %X\n", f->ieee.sign);
-    printf("  f->ieee.exponent = %X\n", f->ieee.exponent);
-    printf("  f->ieee.fraction = %X\n", f->ieee.fraction);
+    printf("  float         = %f\n",   f->f);
+    printf("  hex           = 0x%X\n", f->u);
+    printf("  IEEE sign     = 0x%X\n", f->ieee.sign);
+    printf("  IEEE exponent = 0x%X\n", f->ieee.exponent);
+    printf("  IEEE fraction = 0x%X\n", f->ieee.fraction);
 
     /* Convert back to decimal. */
     float new_val = 0.0;
@@ -108,8 +109,6 @@ disp_hex(const char *data_name,
     }
     printf("  re-calc'ed val: %f\n", new_val);
   }
-
-  disp_bin(data, data_size);
 }
 
 int main(int argc, char **argv)
