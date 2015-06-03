@@ -1,3 +1,7 @@
+/* This file contains an ADT that performs floating point exponentiation.
+ * Floating poing exponentiation is a lot more complicated than plain old
+ * decimal exponentiation, so it has been isolated in this ADT.
+ */
 
 #include <stdint.h>
 #include <stdlib.h>
@@ -5,14 +9,14 @@
 
 #include "common.h"
 
-#include "fp_exponent.h"
+#include "fp_exp.h"
 
 /******************************************************************************
  ****************************** CLASS DEFINITION ******************************
  *****************************************************************************/
 
-/* This is the fp_exponent class. */
-struct fp_exponent {
+/* This is the fp_exp class. */
+struct fp_exp {
   double base;
   double exp;
   double result;
@@ -30,7 +34,7 @@ struct fp_exponent {
  * We've already determined this->exp is a whole number, so we can do simple
  * exponent math.  We will calculate (this->base^this->exp).
  *
- * Note that we aren't using the base and exp that are stored in an fp_exponent
+ * Note that we aren't using the base and exp that are stored in an fp_exp
  * object.  This method just provides a utility service that are needed to
  * calculate the actual exponent.
  *
@@ -43,7 +47,7 @@ struct fp_exponent {
  *   Returns the result.
  */
 static double
-fp_exponent_integer_exp(double       base,
+fp_exp_integer_exp(double       base,
                         int          exp)
 {
   double result = 0.0;
@@ -83,18 +87,18 @@ fp_exponent_integer_exp(double       base,
  * and use it to reduce the exponent fraction.
  *
  * Input:
- *   this = A pointer to the fp_exponent object.
+ *   this = A pointer to the fp_exp object.
  *
  * Output:
  *   true  = success.  The exponent has been converted to a fraction.
  *   false = failure.  Something went wrong.
  */
 static bool
-fp_exponent_to_fraction(fp_exponent *this)
+fp_exp_to_fraction(fp_exp *this)
 {
   bool retcode = false;
 
-  if(this != (fp_exponent *) 0)
+  if(this != (fp_exp *) 0)
   {
     /* Convert the exponent to a fraction (numerator and denominator), and then
      * reduce the fraction.
@@ -102,7 +106,7 @@ fp_exponent_to_fraction(fp_exponent *this)
     int loop;
     for(loop = 1; loop < 20; loop++)
     {
-      double root = fp_exponent_integer_exp(10.0, loop);
+      double root = fp_exp_integer_exp(10.0, loop);
       double tmp_f1 = this->exp * root;
       int64_t tmp_i = (int64_t) tmp_f1;
       double tmp_f2 = (double) tmp_i;
@@ -176,7 +180,7 @@ fp_exponent_to_fraction(fp_exponent *this)
  *      |Delta X_k| < Epsilon.
  *
  * Input:
- *   this = A pointer to the fp_exponent object.  In this member, the variables
+ *   this = A pointer to the fp_exp object.  In this member, the variables
  *          are as follows:
  *          A   = this->base
  *          n   = this->exp_denominator
@@ -186,7 +190,7 @@ fp_exponent_to_fraction(fp_exponent *this)
  *   Returns the guess.
  */
 static double
-fp_exponent_nth_root_guess(fp_exponent *this)
+fp_exp_nth_root_guess(fp_exp *this)
 {
   double   A   = this->base;
   uint64_t n   = this->exp_denominator;
@@ -203,7 +207,7 @@ fp_exponent_nth_root_guess(fp_exponent *this)
      * Delta X_k = (1 / n) * ((A / X_k^(n-1)) - X_k); X_k+1 = X_k + Delta X_k.
      */
     double part1 = 1.0 / n;
-    double part2 = fp_exponent_integer_exp(X_k, (n - 1));
+    double part2 = fp_exp_integer_exp(X_k, (n - 1));
     double part3 = A / part2;
     double part4 = part3 - X_k;
     double delta_X_k = part1 * part4;
@@ -223,8 +227,8 @@ fp_exponent_nth_root_guess(fp_exponent *this)
  ********************************* PUBLIC API *********************************
  *****************************************************************************/
 
-/* Create a new fp_exponent object.  This object can be used to access the
- * fp_exponent class.
+/* Create a new fp_exp object.  This object can be used to access the
+ * fp_exp class.
  *
  * Input:
  *   base = The base for the exponentiation.
@@ -235,14 +239,14 @@ fp_exponent_nth_root_guess(fp_exponent *this)
  *   Returns a pointer to the object.
  *   Returns 0 if unable to create the object.
  */
-fp_exponent *
-fp_exponent_new(double base,
+fp_exp *
+fp_exp_new(double base,
                 double exp)
 {
-  fp_exponent *this = (fp_exponent *) 0;
+  fp_exp *this = (fp_exp *) 0;
 
   /* Initialize. */
-  if((this = (fp_exponent *) malloc(sizeof(*this))) != (fp_exponent *) 0)
+  if((this = (fp_exp *) malloc(sizeof(*this))) != (fp_exp *) 0)
   {
     /* Save the base and exponent. */
     this->base = base;
@@ -252,21 +256,21 @@ fp_exponent_new(double base,
   return this;
 }
 
-/* Delete an fp_exponent object that was created by fp_exponent_new().
+/* Delete an fp_exp object that was created by fp_exp_new().
  *
  * Input:
- *   this = A pointer to the fp_exponent object.
+ *   this = A pointer to the fp_exp object.
  *
  * Output:
  *   true  = success.  The object is deleted.
  *   false = failure.
  */
 bool
-fp_exponent_delete(fp_exponent *this)
+fp_exp_delete(fp_exp *this)
 {
   bool retcode = false;
 
-  if(this != (fp_exponent *) 0)
+  if(this != (fp_exp *) 0)
   {
     free(this);
     retcode = true;
@@ -302,18 +306,18 @@ fp_exponent_delete(fp_exponent *this)
  * And then we have solved x = (5^3.4).
  *
  * Input:
- *   this   = A pointer to the fp_exponent object.
+ *   this   = A pointer to the fp_exp object.
  *
  * Output:
  *   true  = success.  *result contains the result.
  *   false = failure.  *results is undefined.
  */
 bool
-fp_exponent_calc(fp_exponent *this)
+fp_exp_calc(fp_exp *this)
 {
   bool retcode = false;
 
-  if(this == (fp_exponent *) 0)
+  if(this == (fp_exp *) 0)
   {
     return retcode;
   }
@@ -334,21 +338,21 @@ fp_exponent_calc(fp_exponent *this)
   double   tmp_exp_f = (double) tmp_exp_i;
   if(this->exp == tmp_exp_f)
   {
-    this->result = fp_exponent_integer_exp(this->base, tmp_exp_i);
+    this->result = fp_exp_integer_exp(this->base, tmp_exp_i);
     retcode = true;
   }
 
   else
   {
     /* Convert the exponent to a fraction (numerator and denominator). */
-    if((retcode = fp_exponent_to_fraction(this)) == true)
+    if((retcode = fp_exp_to_fraction(this)) == true)
     {
       /* Solve the nth root (see description above). */
-      double guess = fp_exponent_nth_root_guess(this);
+      double guess = fp_exp_nth_root_guess(this);
       DBG_PRINT("%s(): nth_root: this->base %f: this->exp_denominator %lld: guess %f\n",
                  __func__, this->base, this->exp_denominator, guess);
 
-      this->result = fp_exponent_integer_exp(guess, this->exp_numerator);
+      this->result = fp_exp_integer_exp(guess, this->exp_numerator);
       DBG_PRINT("%s(): exp: guess %f: this->exp_numerator %lld: this->result %f\n",
                   __func__, guess, this->exp_numerator, this->result);
     }
@@ -362,9 +366,9 @@ fp_exponent_calc(fp_exponent *this)
   return retcode;
 }
 
-/* Get the result from fp_exponent_calc().
+/* Get the result from fp_exp_calc().
  * Input:
- *   this   = A pointer to the fp_exponent object.
+ *   this   = A pointer to the fp_exp object.
  *
  *   result = A pointer to the location where we will store the result.
  *
@@ -373,12 +377,12 @@ fp_exponent_calc(fp_exponent *this)
  *   false = failure.  *results is undefined.
  */
 bool
-fp_exponent_get_result(fp_exponent *this,
+fp_exp_get_result(fp_exp *this,
                        double      *result)
 {
   bool retcode = false;
 
-  if((this != (fp_exponent *) 0) && (result != (double *) 0))
+  if((this != (fp_exp *) 0) && (result != (double *) 0))
   {
     *result = this->result;
     retcode = true;
@@ -393,17 +397,17 @@ fp_exponent_get_result(fp_exponent *this,
 
 #if defined(TEST)
 bool
-fp_exponent_test(void)
+fp_exp_test(void)
 {
   bool retcode = true;
 
   /* Here are some problems to test against. */
-  typedef struct fp_exponent_test {
+  typedef struct fp_exp_test {
     double base;
     double exp;
     double result;
-  } fp_exponent_test;
-  fp_exponent_test tests[] = {
+  } fp_exp_test;
+  fp_exp_test tests[] = {
     { 2.0,   3.0,    8.0               },
     { 2.0,  -3.0,    0.125             },
     { 2.0,  -2.3456, 0.196745153116215 },
@@ -411,21 +415,21 @@ fp_exponent_test(void)
     { 2.0,   3.5,   11.313708498984754 },
     { 2.0,   3.6,   12.125732532083205 },
   };
-  size_t tests_size = (sizeof(tests) / sizeof(fp_exponent_test));
+  size_t tests_size = (sizeof(tests) / sizeof(fp_exp_test));
 
   int x;
   for(x = 0; x < tests_size; x++)
   {
     bool rc;
-    fp_exponent_test *t = &tests[x];
-    fp_exponent *obj;
-    rc = ((obj = fp_exponent_new(t->base, t->exp)) != (fp_exponent *) 0) ? true : false;
-    if((rc) && (obj != (fp_exponent *) 0))
+    fp_exp_test *t = &tests[x];
+    fp_exp *obj;
+    rc = ((obj = fp_exp_new(t->base, t->exp)) != (fp_exp *) 0) ? true : false;
+    if((rc) && (obj != (fp_exp *) 0))
     {
       double result = 0.0;
-      if((rc = fp_exponent_calc(obj)) == true)
+      if((rc = fp_exp_calc(obj)) == true)
       {
-        rc = fp_exponent_get_result(obj, &result);
+        rc = fp_exp_get_result(obj, &result);
       }
       printf("  rc %s: result = %10.15f: t->result %10.15f: ",
              (rc == true) ? "true" : "false", result, t->result);

@@ -93,21 +93,31 @@
       + Negative floating point.
         + "2^-2.3456" in the fp_exponent test program returns 0.0.
     + Hook into the calculator's operand.c class.
-  - Create operand::to_str() member.  Then move that functionality from
+  + Create operand::to_str() member.  Then move that functionality from
     calculator.c to operand.c
     + Clean up calculator::get_console_trv_cb() so it calls operand::to_str()
       to get each string.
-    - Fix fp output.  Get rid of trailing zeroes.
-      - Why does operand_add_char() turn 123.456 into 123.45600000111111?
-        - Create a test program that contains some doubles.  Init them as:
-          "double foo = 123.456".  See what it looks like.
-    - In decimal mode, display base_1000 (1,000,000,000) format.
-  - Detect overflow of int and fp operands.  Operations can overflow, but
-    adding a character can't.  Silently drop the character if overflow would
-    happen.
-    - Figure out int64_t and double min/max.
+  - Switch operand class over to BCD.  That's the only way to eliminate
+    rounding issues.
+    - decimal64 class.
+      + Get test data from some other source.
+      + dpd2bcd function.
+      + decimal64_export() and bcd2dpd() functions (Do we need these?  They
+        would be useful for testing.
+    - bcd class:
+      - Add
+      - Subtract
+      - Multiply
+      - Divide
+      - to_str()
+        - In decimal mode, display base_1000 (1,000,000,000) format.
+      - Detect overflow of int and fp operands.  Operations can overflow, but
+        adding a character can't.  Silently drop the character if overflow would
+        happen.
+      - Figure out int64_t and double min/max.
+    - hex class:
   - Standardize test programs to return 0 for success and 1 for failure.
-    - Move DBG_PRINT from fp_exponent.c to common.h.
+    - Move DBG_PRINT from fp_exp.c to common.h.
       - Add DBG_PRINT statements to classes.
       - Convert printf() to DBG_PRINT.
   - Parentheses:

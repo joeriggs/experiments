@@ -1,5 +1,4 @@
-/* This is a test program that exercises all of the classes that comprise the
- * calculator.
+/* This is a test program that exercises the decimal64 class.
  */
 
 #include <stdio.h>

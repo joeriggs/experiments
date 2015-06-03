@@ -597,15 +597,18 @@ decimal64_test(void)
     retcode = (obj != (decimal64 *) 0) ? true : false;
     if(retcode == true)
     {
-      printf("bef %016llX.\n", t->val.val);
+      printf("val before import: %016llX.\n", t->val.val);
       if((retcode = decimal64_disp(t->val))        != true) break;
       if((retcode = decimal64_import(obj, t->val)) != true) break;
 
       decimal64_t d;
       if((retcode = decimal64_export(obj, &d))     != true) break;
       if((retcode = decimal64_disp(d))             != true) break;
-      DBG_PRINT("aft %016llX.\n", d.val);
+      DBG_PRINT("val after export: %016llX.\n", d.val);
       if((retcode = (t->val.val == d.val))         != true) break;
+
+      if((retcode = decimal64_delete(obj))         != true) break;
+      obj = (decimal64 *) 0;
     }
   }
 

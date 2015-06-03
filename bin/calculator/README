@@ -17,12 +17,15 @@ The class heirarchy looks like this:
    -------------  --------------------------------------------------------
   |  raw_stdin  ||                       calculator                       |
    -------------  --------------------------------------------------------
-                -------------  -------------  -------------  -------------
-               |    list     ||   operand   ||  operator   ||    stack    |
-                -------------  -------------  -------------  -------------
-                               -------------
-                              | fp_exponent |
-                               -------------
+                  ------------  ------------  ------------  ------------
+                 |    list    ||   operand  ||  operator  ||    stack   |
+                  ------------  ------------  ------------  ------------
+                                ------   ---
+                               |fp_exp| | b |
+                                ------  | c |
+                                --------  d |
+                               |     bcd    |
+                                ------------
 
   * main() provides the text-based user interface.  If you want to replace the
     text-based user interface with something more sophisticated, then you will
@@ -43,9 +46,13 @@ The class heirarchy looks like this:
     * operand is used to store each operand.  It contains members that know how
       to manipulate the numeric operands.
 
-      * fp_exponent is used to perform exponent operations when the exponent is
-        a floating point number or a negative number.  All integer exponent
+      * fp_exp is used to perform exponent operations when the exponent is a
+        floating point number or a negative number.  All integer exponent
         operations are handled by the operand class.
+
+      * bcd provides a binary coded decimal (bcd) data representation that
+        allows the calculator to do decimal math without running into problems
+        caused by IEEE 754 float or double issues.
 
     * operator is used to store each operator.  It contains members that know
       how to execute the steps necessary to perform the operator.

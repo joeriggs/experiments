@@ -1,5 +1,5 @@
 
-OBJ = main.o calculator.o fp_exponent.o list.o operand.o operator.o raw_stdin.o stack.o
+OBJ = main.o calculator.o fp_exp.o list.o operand.o operator.o raw_stdin.o stack.o
 
 TARGET = calculator
 

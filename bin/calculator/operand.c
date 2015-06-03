@@ -9,7 +9,7 @@
 
 #include "common.h"
 
-#include "fp_exponent.h"
+#include "fp_exp.h"
 #include "operand.h"
 
 /******************************************************************************
@@ -31,6 +31,52 @@ struct operand {
 /******************************************************************************
  ******************************** PRIVATE API *********************************
  *****************************************************************************/
+
+/* Return the current value of the specified operand object.
+ *
+ * Input:
+ *   this  = A pointer to the operand object.
+ *
+ *   is_fp = A ptr to a bool that is set to true if the operand is a float.
+ *
+ *   i_val = A ptr to an integer.
+ *           if (is_fp == true)  = 0.
+ *           if (is_fp == false) = the int value of the operand.
+ *
+ *   f_val = A ptr to a float.
+ *           if (is_fp == true)  = the fp value of the operand.
+ *           if (is_fp == false) = the int value of the operand.
+ *
+ * Output:
+ *   true  = success.
+ *   false = failure.
+ */
+static bool
+operand_get_val(operand  *this,
+                bool     *is_fp,
+                int64_t  *i_val,
+                double   *f_val)
+{
+  bool retcode = false;
+
+  if(this != (operand *) 0)
+  {
+    if((*is_fp = this->got_decimal_point) == true)
+    {
+      *i_val = 0;
+      *f_val = this->f_val;
+    }
+    else
+    {
+      *i_val = this->i_val;
+      *f_val = this->i_val;
+    }
+
+    retcode = true;
+  }
+
+  return retcode;
+}
 
 /* Load 2 operands.  This is used to prep for a BINARY operation.
  *
@@ -349,14 +395,14 @@ operand_op_exp(operand *op1,
      * negative number, then do the exponentiation as floating point. */
     if( (is_fp == true) || (i2 < 0) )
     {
-      fp_exponent *fp = fp_exponent_new(f1, f2);
-      if(fp != (fp_exponent *) 0)
+      fp_exp *fp = fp_exp_new(f1, f2);
+      if(fp != (fp_exp *) 0)
       {
-        if((retcode = fp_exponent_calc(fp)) == true)
+        if((retcode = fp_exp_calc(fp)) == true)
         {
-          retcode = fp_exponent_get_result(fp, &f1);
+          retcode = fp_exp_get_result(fp, &f1);
         }
-        retcode = (retcode == true) && (fp_exponent_delete(fp) == true);
+        retcode = (retcode == true) && (fp_exp_delete(fp) == true);
         is_fp = true;
       }
     }
@@ -763,52 +809,6 @@ operand_add_char(operand *this,
   return retcode;
 }
 
-/* Return the current value of the specified operand object.
- *
- * Input:
- *   this  = A pointer to the operand object.
- *
- *   is_fp = A ptr to a bool that is set to true if the operand is a float.
- *
- *   i_val = A ptr to an integer.
- *           if (is_fp == true)  = 0.
- *           if (is_fp == false) = the int value of the operand.
- *
- *   f_val = A ptr to a float.
- *           if (is_fp == true)  = the fp value of the operand.
- *           if (is_fp == false) = the int value of the operand.
- *
- * Output:
- *   true  = success.
- *   false = failure.
- */
-bool
-operand_get_val(operand  *this,
-                bool     *is_fp,
-                int64_t  *i_val,
-                double   *f_val)
-{
-  bool retcode = false;
-
-  if(this != (operand *) 0)
-  {
-    if((*is_fp = this->got_decimal_point) == true)
-    {
-      *i_val = 0;
-      *f_val = this->f_val;
-    }
-    else
-    {
-      *i_val = this->i_val;
-      *f_val = this->i_val;
-    }
-
-    retcode = true;
-  }
-
-  return retcode;
-}
-
 /* Create an ASCII string the represents the current value of the operand.
  *
  * Input:
@@ -838,7 +838,10 @@ bool operand_to_str(operand *this,
   {
     if(is_fp)
     {
-      snprintf(buf, buf_size, "%1.40f", f_val);
+      snprintf(buf, buf_size, "%f", f_val);
+
+      /* Remove trailing zeroes. */
+      
     }
     else
     {
@@ -881,8 +884,9 @@ operand_test(void)
     double       f_val;
   } operand_test;
   operand_test tests[] = {
-    { "123",     operand_base_10, false,  123, 123.0   }, // Simple integer value.
-    { "123.456", operand_base_10,  true,    0, 123.456 }, // Simple floating point value.
+    { "123",     operand_base_10, false,     123,    123.0   }, // Simple integer value.
+    { "123000",  operand_base_10, false,  123000, 123000.0   }, // Integer with trailing zeroes.
+    { "123.456", operand_base_10,  true,       0,    123.456 }, // Simple floating point value.
   };
   size_t operand_test_size = (sizeof(tests) / sizeof(operand_test));
 
