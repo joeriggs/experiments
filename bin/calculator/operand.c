@@ -9,7 +9,9 @@
 
 #include "common.h"
 
+#include "bcd.h"
 #include "fp_exp.h"
+#include "hex.h"
 #include "operand.h"
 
 /******************************************************************************
@@ -18,10 +20,12 @@
 
 /* This is the operand class. */
 struct operand {
-  int64_t  i_val;
-  double   f_val;
-  bool     got_decimal_point;
-  double   fp_multiplier;
+
+  /* This is the number when we're running in decimal mode. */
+  bcd *decnum;
+
+  /* This is the number when we're running in hexadecimal mode. */
+  hex *hexnum;
 
   /* The number base we're currently configured to use.  This refers to things
    * like base_10 or base_16. */
@@ -31,155 +35,6 @@ struct operand {
 /******************************************************************************
  ******************************** PRIVATE API *********************************
  *****************************************************************************/
-
-/* Return the current value of the specified operand object.
- *
- * Input:
- *   this  = A pointer to the operand object.
- *
- *   is_fp = A ptr to a bool that is set to true if the operand is a float.
- *
- *   i_val = A ptr to an integer.
- *           if (is_fp == true)  = 0.
- *           if (is_fp == false) = the int value of the operand.
- *
- *   f_val = A ptr to a float.
- *           if (is_fp == true)  = the fp value of the operand.
- *           if (is_fp == false) = the int value of the operand.
- *
- * Output:
- *   true  = success.
- *   false = failure.
- */
-static bool
-operand_get_val(operand  *this,
-                bool     *is_fp,
-                int64_t  *i_val,
-                double   *f_val)
-{
-  bool retcode = false;
-
-  if(this != (operand *) 0)
-  {
-    if((*is_fp = this->got_decimal_point) == true)
-    {
-      *i_val = 0;
-      *f_val = this->f_val;
-    }
-    else
-    {
-      *i_val = this->i_val;
-      *f_val = this->i_val;
-    }
-
-    retcode = true;
-  }
-
-  return retcode;
-}
-
-/* Load 2 operands.  This is used to prep for a BINARY operation.
- *
- * Input:
- *   op1   = A pointer to the 1st operand.
- *
- *   op2   = A pointer to the 2nd operand.
- *
- *   is_fp = We set to true if you need to do fp math.
- *
- *   i1    = A pointer to an integer.  It is set to the integer value that is
- *           returned from operand_get_val(op1).
- *
- *   f1    = A pointer to a float.  It is set to the floating point value that
- *           is returned from operand_get_val(op1).
- *
- *   i2    = A pointer to an integer.  It is set to the integer value that is
- *           returned from operand_get_val(op2).
- *
- *   f1    = A pointer to a float.  It is set to the floating point value that
- *           is returned from operand_get_val(op2).
- *
- * Output:
- *   true  = success.
- *   false = failure.
- */
-static bool
-operand_op_get_binary_ops(operand  *op1,
-                          operand  *op2,
-                          bool     *is_fp,
-                          int64_t  *i1,
-                          double   *f1,
-                          int64_t  *i2,
-                          double   *f2)
-{
-  bool retcode = false;
-
-  bool is_fp1, is_fp2;
-  if( ((retcode = operand_get_val(op1, &is_fp1, i1, f1)) == true) &&
-      ((retcode = operand_get_val(op2, &is_fp2, i2, f2)) == true) )
-  {
-    if((is_fp1 == true) || (is_fp2 == true))
-    {
-      *f1 = is_fp1 ? *f1 : *i1;
-      *f2 = is_fp2 ? *f2 : *i2;
-      *is_fp = true;
-    }
-    else
-    {
-      *f1 = *i1;
-      *f2 = *i2;
-      *is_fp = false;
-    }
-  }
-
-  return retcode;
-}
-
-/* Update the values in an operand object.
- *
- * Input:
- *   this  = A pointer to the operand object.
- *
- *   is_fp = Indicates whether the operand contains a floating point value.
- *
- *   i_val = Indicates the integer value to save.  If (is_fp == true), then
- *           this value is N/A.
- *
- *   f_val = Indicates the floating point value to save.  If (is_fp == false),
- *           then this value is N/A.
- *
- * Output:
- *   true  = success.
- *   false = failure.
- */
-static bool
-operand_set_val(operand  *this,
-                bool      is_fp,
-                int64_t   i_val,
-                double    f_val)
-{
-  bool retcode = false;
-
-  if(this != (operand *) 0)
-  {
-    if(is_fp == true)
-    {
-      this->got_decimal_point = true;
-      this->f_val = f_val;
-      this->i_val = 0;
-    }
-    else
-    {
-      this->got_decimal_point = false;
-      this->i_val = i_val;
-      this->f_val = 0.0;
-    }
-
-    retcode = true;
-  }
-
-  return retcode;
-}
 
 /******************************************************************************
  ********************************* PUBLIC OPS *********************************
@@ -202,24 +57,27 @@ operand_op_add(operand *op1,
 {
   bool retcode = false;
 
-  bool is_fp;
-  int64_t  i1 = 0,   i2 = 0;
-  double   f1 = 0.0, f2 = 0.0;
-
-  if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
+  /* Both operands have to be of the same base.  We don't try to correct that
+   * kind of problem. */
+  if( (op1 != (operand *) 0) && (op2 != (operand *) 0) && (op1->base == op2->base) )
   {
-    if(is_fp == true)
+    /* Pass the operation along to the class that knows how to deal with this
+     * type of number. */
+    switch(op1->base)
     {
-      f1 += f2;
-    }
-    else
-    {
-      i1 += i2;
-    }
+    case operand_base_10:
+      retcode = bcd_op_add(op1->decnum, op2->decnum);
+      break;
 
-    retcode = operand_set_val(op1, is_fp, i1, f1);
+    case operand_base_16:
+      retcode = hex_op_add(op1->hexnum, op2->hexnum);
+      break;
+
+    default:
+      break;
+    }
   }
-
+    
   return retcode;
 }
 
@@ -240,22 +98,25 @@ operand_op_sub(operand *op1,
 {
   bool retcode = false;
 
-  bool is_fp;
-  int64_t  i1 = 0,   i2 = 0;
-  double   f1 = 0.0, f2 = 0.0;
-
-  if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
+  /* Both operands have to be of the same base.  We don't try to correct that
+   * kind of problem. */
+  if( (op1 != (operand *) 0) && (op2 != (operand *) 0) && (op1->base == op2->base) )
   {
-    if(is_fp == true)
+    /* Pass the operation along to the class that knows how to deal with this
+     * type of number. */
+    switch(op1->base)
     {
-      f1 -= f2;
-    }
-    else
-    {
-      i1 -= i2;
-    }
+    case operand_base_10:
+      retcode = bcd_op_sub(op1->decnum, op2->decnum);
+      break;
 
-    retcode = operand_set_val(op1, is_fp, i1, f1);
+    case operand_base_16:
+      retcode = hex_op_sub(op1->hexnum, op2->hexnum);
+      break;
+
+    default:
+      break;
+    }
   }
 
   return retcode;
@@ -278,22 +139,26 @@ operand_op_mul(operand *op1,
 {
   bool retcode = false;
 
-  bool is_fp;
-  int64_t  i1 = 0,   i2 = 0;
-  double   f1 = 0.0, f2 = 0.0;
-
-  if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
+  /* Both operands have to be of the same base.  We don't try to correct that
+   * kind of problem. */
+  if( (op1 != (operand *) 0) && (op2 != (operand *) 0) && (op1->base == op2->base) )
   {
-    if(is_fp == true)
+    /* Pass the operation along to the class that knows how to deal with this
+     * type of number. */
+    switch(op1->base)
     {
-      f1 *= f2;
-    }
-    else
-    {
-      i1 *= i2;
-    }
+    case operand_base_10:
+      retcode = bcd_op_mul(op1->decnum, op2->decnum);
+      break;
 
-    retcode = operand_set_val(op1, is_fp, i1, f1);
+    case operand_base_16:
+      retcode = hex_op_mul(op1->hexnum, op2->hexnum);
+      break;
+      break;
+
+    default:
+      break;
+    }
   }
 
   return retcode;
@@ -316,52 +181,24 @@ operand_op_div(operand *op1,
 {
   bool retcode = false;
 
-  bool is_fp;
-  int64_t  i1 = 0,   i2 = 0;
-  double   f1 = 0.0, f2 = 0.0;
-
-  if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
+  /* Both operands have to be of the same base.  We don't try to correct that
+   * kind of problem. */
+  if( (op1 != (operand *) 0) && (op2 != (operand *) 0) && (op1->base == op2->base) )
   {
-    if(is_fp == false)
+    /* Pass the operation along to the class that knows how to deal with this
+     * type of number. */
+    switch(op1->base)
     {
-      /* Divide by zero is an error. */
-      if(i2 == 0)
-      {
-        retcode = false;
-      }
+    case operand_base_10:
+      retcode = bcd_op_div(op1->decnum, op2->decnum);
+      break;
 
-      /* Check to see if the result will be a float. */
-      else if((i1 % i2) != 0)
-      {
-        f1 = i1;
-        f2 = i2;
-        is_fp = true;
-      }
+    case operand_base_16:
+      retcode = hex_op_div(op1->hexnum, op2->hexnum);
+      break;
 
-      /* Do the regular integer division. */
-      else
-      {
-        i1 /= i2;
-        retcode = operand_set_val(op1, is_fp, i1, f1);
-      }
-    }
-
-    /* One (or more) of the following is true:
-     * 1. op1 is a float.
-     * 2. op2 is a float.
-     * 3. i1 / i2 would leave a remainder.
-     */
-    if(is_fp == true)
-    {
-      if(f2 == 0)
-      {
-        retcode = false;
-      }
-      else
-      {
-        f1 /= f2;
-        retcode = operand_set_val(op1, is_fp, i1, f1);
-      }
+    default:
+      break;
     }
   }
 
@@ -385,51 +222,24 @@ operand_op_exp(operand *op1,
 {
   bool retcode = false;
 
-  bool is_fp;
-  int64_t  i1 = 0,   i2 = 0;
-  double   f1 = 0.0, f2 = 0.0;
-
-  if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
+  /* Both operands have to be of the same base.  We don't try to correct that
+   * kind of problem. */
+  if( (op1 != (operand *) 0) && (op2 != (operand *) 0) && (op1->base == op2->base) )
   {
-    /* If the exponent is a floating point number, or if the exponent is a
-     * negative number, then do the exponentiation as floating point. */
-    if( (is_fp == true) || (i2 < 0) )
+    /* Pass the operation along to the class that knows how to deal with this
+     * type of number. */
+    switch(op1->base)
     {
-      fp_exp *fp = fp_exp_new(f1, f2);
-      if(fp != (fp_exp *) 0)
-      {
-        if((retcode = fp_exp_calc(fp)) == true)
-        {
-          retcode = fp_exp_get_result(fp, &f1);
-        }
-        retcode = (retcode == true) && (fp_exp_delete(fp) == true);
-        is_fp = true;
-      }
-    }
-    else
-    {
-      /* x^0 = 1 */
-      if(i2 == 0)
-      {
-        i1 = 1;
-      }
-      /* x^1 = x */
-      else if(i2 == 1)
-      {
-      }
-      /* Calculate x^n */
-      else if(i2 > 1)
-      {
-        int i;
-        int org_i1 = i1;
-        for(i = 1; i < i2; i++)
-        {
-          i1 *= org_i1;
-        }
-      }
-    }
+    case operand_base_10:
+      retcode = bcd_op_exp(op1->decnum, op2->decnum);
+      break;
 
-    retcode = operand_set_val(op1, is_fp, i1, f1);
+    case operand_base_16:
+      break;
+
+    default:
+      break;
+    }
   }
 
   return retcode;
@@ -452,18 +262,22 @@ operand_op_and(operand *op1,
 {
   bool retcode = false;
 
-  operand_base base1, base2;
-  if((operand_get_base(op1, &base1) == true) && (base1 == operand_base_16) &&
-     (operand_get_base(op2, &base2) == true) && (base2 == operand_base_16))
+  /* Both operands have to be of the same base.  We don't try to correct that
+   * kind of problem. */
+  if( (op1 != (operand *) 0) && (op2 != (operand *) 0) && (op1->base == op2->base) )
   {
-    bool is_fp;
-    int64_t  i1 = 0,   i2 = 0;
-    double   f1 = 0.0, f2 = 0.0;
-
-    if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
+    /* Pass the operation along to the class that knows how to deal with this
+     * type of number. */
+    switch(op1->base)
     {
-      i1 &= i2;
-      retcode = operand_set_val(op1, is_fp, i1, f1);
+    case operand_base_10:
+      break;
+
+    case operand_base_16:
+      break;
+
+    default:
+      break;
     }
   }
 
@@ -487,17 +301,22 @@ operand_op_or(operand *op1,
 {
   bool retcode = false;
 
-  operand_base base1, base2;
-  if((operand_get_base(op1, &base1) == true) && (base1 == operand_base_16) &&
-     (operand_get_base(op2, &base2) == true) && (base2 == operand_base_16))
+  /* Both operands have to be of the same base.  We don't try to correct that
+   * kind of problem. */
+  if( (op1 != (operand *) 0) && (op2 != (operand *) 0) && (op1->base == op2->base) )
   {
-    bool is_fp;
-    int64_t  i1 = 0,   i2 = 0;
-    double   f1 = 0.0, f2 = 0.0;
-
-    if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
+    /* Pass the operation along to the class that knows how to deal with this
+     * type of number. */
+    switch(op1->base)
     {
-      i1 |= i2;
+    case operand_base_10:
+      break;
+
+    case operand_base_16:
+      break;
+
+    default:
+      break;
     }
   }
 
@@ -522,17 +341,22 @@ operand_op_xor(operand *op1,
 {
   bool retcode = false;
 
-  operand_base base1, base2;
-  if((operand_get_base(op1, &base1) == true) && (base1 == operand_base_16) &&
-     (operand_get_base(op2, &base2) == true) && (base2 == operand_base_16))
+  /* Both operands have to be of the same base.  We don't try to correct that
+   * kind of problem. */
+  if( (op1 != (operand *) 0) && (op2 != (operand *) 0) && (op1->base == op2->base) )
   {
-    bool is_fp;
-    int64_t  i1 = 0,   i2 = 0;
-    double   f1 = 0.0, f2 = 0.0;
-
-    if((retcode = operand_op_get_binary_ops(op1, op2, &is_fp, &i1, &f1, &i2, &f2)) == true)
+    /* Pass the operation along to the class that knows how to deal with this
+     * type of number. */
+    switch(op1->base)
     {
-      i1 ^= i2;
+    case operand_base_10:
+      break;
+
+    case operand_base_16:
+      break;
+
+    default:
+      break;
     }
   }
 
@@ -553,16 +377,20 @@ operand_op_not(operand *this)
 {
   bool retcode = false;
 
-  operand_base base;
-  if((operand_get_base(this, &base) == true) && (base == operand_base_16))
+  if(this!= (operand *) 0)
   {
-    bool is_fp;
-    int64_t  i;
-    double   f;
-
-    if((retcode = operand_get_val(this, &is_fp, &i, &f)) == true)
+    /* Pass the operation along to the class that knows how to deal with this
+     * type of number. */
+    switch(this->base)
     {
-      i = ~i;
+    case operand_base_10:
+      break;
+
+    case operand_base_16:
+      break;
+
+    default:
+      break;
     }
   }
 
@@ -589,10 +417,23 @@ operand_new(operand_base base)
 
   if(this != (operand *) 0)
   {
-    this->i_val             = 0LL;
-    this->f_val             = 0.0;
-    this->got_decimal_point = false;
-    this->base              = base;
+    this->base    = base;
+    if( ((this->decnum = bcd_new()) == (bcd *) 0) ||
+        ((this->hexnum = hex_new()) == (hex *) 0) )
+    {
+      if(this->decnum != (bcd *) 0)
+      {
+        bcd_delete(this->decnum);
+      }
+
+      if(this->hexnum != (hex *) 0)
+      {
+        hex_delete(this->hexnum);
+      }
+
+      operand_delete(this);
+      this = (operand *) 0;
+    }
   }
 
   return this;
@@ -614,8 +455,10 @@ operand_delete(operand *this)
 
   if(this != (operand *) 0)
   {
+    retcode = bcd_delete(this->decnum);
+    retcode = hex_delete(this->hexnum);
+
     free(this);
-    retcode = true;
   }
 
   return retcode;
@@ -630,7 +473,7 @@ operand_delete(operand *this)
  *
  * Output:
  *   true  = success.  *base = the current base.
- *   false = failure.  *base = operand_base_unknown.
+ *   false = failure.  *base = operand_base_unknown (if it's a valid pointer).
  */
 bool
 operand_get_base(operand *this,
@@ -684,15 +527,6 @@ operand_set_base(operand *this,
         break;
       
       case operand_base_16:
-        if(this->base == operand_base_10)
-        {
-          if(this->got_decimal_point == true)
-          {
-            this->i_val = this->f_val;
-            this->got_decimal_point = false;
-            this->f_val = 0.0;
-          }
-        }
         this->base = base;
         retcode = true;
         break;
@@ -707,17 +541,16 @@ operand_set_base(operand *this,
   return retcode;
 }
 
-/* Attempt to add a character to an existing operand object.  The character is
- * first checked to see if it's a valid part of an operand.  If it's valid, it
- * is added.
+/* Attempt to add a character to the operand object.
  *
  * Input:
  *   this = A pointer to the operand object.
  *
- *   c = The character to add.  Note that it might not be a valid operand.
+ *   c    = The char to add.
  *
  * Output:
- *   true  = success.  c is valid, and it has been added to this.
+ *   true  = success.  c was processed.  It's possible that it was dropped, but
+ *                     at least it was a valid character.
  *   false = failure.  c is NOT an operand OR we were unable to add c to this.
  */
 bool
@@ -726,82 +559,25 @@ operand_add_char(operand *this,
 {
   bool retcode = false;
 
-  /* Get the base for the operand. */
-  operand_base base;
-  if(operand_get_base(this, &base) == true)
+  if(this != (operand *) 0)
   {
-    /* If it's a decimal point, prepare to start doing decimal math.  If we
-     * already got a decimal point, then this one is silently dropped. */
-    if((base == operand_base_10) && (c == '.'))
+    /* Get the base for the operand, and then pass the character to the
+     * applicable ADT. */
+    operand_base base;
+    if(operand_get_base(this, &base) == true)
     {
-      if(this->got_decimal_point == false)
+      switch(base)
       {
-        this->f_val = this->i_val;
-        this->i_val = 0;
-        this->got_decimal_point = true;
-        this->fp_multiplier = 0.10;
-      }
+      case operand_base_10:
+        retcode = bcd_add_char(this->decnum, c);
+        break;
 
-      retcode = true;
-    }
+      case operand_base_16:
+        retcode = hex_add_char(this->hexnum, c);
+        break;
 
-    /* An 'S' switches the +/- sign of the operand. */
-    else if((c & 0xDF) == 'S')
-    {
-      /* Subtract the current value from 0.  That flips the sign.  It's the
-       * same for integer and floating point. */
-      if(this->got_decimal_point == false)
-      {
-        this->i_val = 0 - this->i_val;
-      }
-      else
-      {
-        this->f_val = 0.0 - this->f_val;
-      }
-
-      retcode = true;
-    }
-
-    /* Not a decimal point or sign.  It better be a digit. */
-    else
-    {
-      /* If it's an ASCII digit, convert it to a binary. */
-      unsigned char c_val = 0xFF;
-      if((c >= '0') && (c <= '9'))
-      {
-        c_val = c - '0';
-      }
-      else if( (base == operand_base_16) && (((c & 0xDF) >= 'A') && ((c & 0xDF) <= 'F')) )
-      {
-        c_val = (c & 0xDF) - 0x37;
-      }
-
-      /* Is it as a digit?  If it is, then add it to the current value. */
-      if(c_val != 0xFF)
-      {
-        switch(base)
-        {
-        case operand_base_16:
-          this->i_val = (this->i_val * 16) + c_val;
-          break;
-
-        case operand_base_10:
-        default:
-          if(this->got_decimal_point == true)
-          {
-            double f = c_val;
-            f *= this->fp_multiplier;
-            this->f_val += f;
-            this->fp_multiplier /= 10.0;
-          }
-          else
-          {
-            this->i_val = (this->i_val * 10) + c_val;
-          }
-          break;
-        }
-
-        retcode = true;
+      default:
+        break;
       }
     }
   }
@@ -831,32 +607,20 @@ bool operand_to_str(operand *this,
 {
   bool retcode = false;
 
-  bool     is_fp;
-  int64_t  i_val;
-  double   f_val;
-  if((retcode = operand_get_val(this, &is_fp, &i_val, &f_val)) == true)
+  if(this != (operand *) 0)
   {
-    if(is_fp)
+    switch(this->base)
     {
-      snprintf(buf, buf_size, "%f", f_val);
+    case operand_base_10:
+      retcode = bcd_to_str(this->decnum, buf, buf_size);
+      break;
 
-      /* Remove trailing zeroes. */
-      
-    }
-    else
-    {
-      operand_base base;
-      if((retcode = operand_get_base(this, &base)) == true)
-      {
-        if(base == operand_base_16)
-        {
-          snprintf(buf, buf_size, "%llX", (long long) i_val);
-        }
-        else
-        {
-          snprintf(buf, buf_size, "%lld", (long long) i_val);
-        }
-      }
+    case operand_base_16:
+      retcode = hex_to_str(this->hexnum, buf, buf_size);
+      break;
+
+    default:
+      break;
     }
   }
 
@@ -879,14 +643,11 @@ operand_test(void)
   typedef struct operand_test {
     const char  *str;
     operand_base base;
-    bool         is_fp;
-    int64_t      i_val;
-    double       f_val;
   } operand_test;
   operand_test tests[] = {
-    { "123",     operand_base_10, false,     123,    123.0   }, // Simple integer value.
-    { "123000",  operand_base_10, false,  123000, 123000.0   }, // Integer with trailing zeroes.
-    { "123.456", operand_base_10,  true,       0,    123.456 }, // Simple floating point value.
+    { "123",     operand_base_10 }, // Simple integer value.
+    { "123000",  operand_base_10 }, // Integer with trailing zeroes.
+    { "123.456", operand_base_10 }, // Simple floating point value.
   };
   size_t operand_test_size = (sizeof(tests) / sizeof(operand_test));
 
@@ -911,15 +672,6 @@ operand_test(void)
     operand_base base;
     if(operand_get_base(this, &base) != true)                        return false;
     if(base != t->base)                                              return false;
-
-    DBG_PRINT("operand_get_val()\n");
-    bool is_fp;
-    int64_t i_val;
-    double f_val;
-    if(operand_get_val(this, &is_fp, &i_val, &f_val) != true)        return false;
-    if(is_fp != t->is_fp)                                            return false;
-    if(i_val != t->i_val)                                            return false;
-    if(f_val != t->f_val)                                            return false;
 
     DBG_PRINT("operand_to_str()\n");
     char result[1024];

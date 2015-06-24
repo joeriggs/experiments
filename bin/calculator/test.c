@@ -9,8 +9,10 @@
 
 #include "common.h"
 
+#include "bcd.h"
 #include "calculator.h"
-#include "fp_exponent.h"
+#include "fp_exp.h"
+#include "hex.h"
 #include "list.h"
 #include "operand.h"
 #include "operator.h"
@@ -58,13 +60,15 @@ int main(int argc, char **argv)
     test_func   func;
   } unit_test;
   unit_test tests[] = {
-    { "Calculator",  calculator_test  },
-    { "FP Exponent", fp_exponent_test },
-    { "List",        list_test        },
-    { "Operand",     operand_test     },
-    { "Operator",    operator_test    },
-    { "Raw Console", raw_stdin_test   },
-    { "Stack",       stack_test       },
+    { "BCD",         bcd_test         },
+//    { "Calculator",  calculator_test  },
+//    { "FP Exponent", fp_exp_test      },
+//    { "HEX",         hex_test         },
+//    { "List",        list_test        },
+//    { "Operand",     operand_test     },
+//    { "Operator",    operator_test    },
+//    { "Raw Console", raw_stdin_test   },
+//    { "Stack",       stack_test       },
   };
   size_t tests_size = (sizeof(tests) / sizeof(unit_test));
 

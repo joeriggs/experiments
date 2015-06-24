@@ -99,18 +99,22 @@
       to get each string.
   - Switch operand class over to BCD.  That's the only way to eliminate
     rounding issues.
-    - decimal64 class.
+    + decimal64 class.
       + Get test data from some other source.
       + dpd2bcd function.
       + decimal64_export() and bcd2dpd() functions (Do we need these?  They
         would be useful for testing.
     - bcd class:
+      - add_char() testing.
+        - Decimal point testing.
+        - Negative number testing.
+      - to_str()
+        - In decimal mode, display base_1000 (1,000,000,000) format.
+        - exp >16 or <-16.
       - Add
       - Subtract
       - Multiply
       - Divide
-      - to_str()
-        - In decimal mode, display base_1000 (1,000,000,000) format.
       - Detect overflow of int and fp operands.  Operations can overflow, but
         adding a character can't.  Silently drop the character if overflow would
         happen.
