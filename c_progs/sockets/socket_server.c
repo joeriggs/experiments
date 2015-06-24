@@ -128,7 +128,7 @@ int main(int argc, char **argv)
 
     printf("%s - %s\n", ifr[i].ifr_name, ip);
 
-    if(strcmp(ifr[i].ifr_name, "eth1") == 0)
+    if(strcmp(ifr[i].ifr_name, "eth0") == 0)
     {
       struct sockaddr_in sin;
       sin.sin_family = AF_INET;
