@@ -1,10 +1,10 @@
 
 #include "socket_test.h"
 
-//#define HOSTNAME "example-go.local3.deisapp.com"
-//#define HOSTNAME "localhost.localdomain"
-#define HOSTNAME "google.com"
+#undef USE_ADDRINFO
+#define USE_SIOCGIFCONF
 
+#ifdef USE_ADDRINFO
 static void
 print_addrinfo(struct addrinfo *i)
 {
@@ -57,6 +57,7 @@ print_addrinfo(struct addrinfo *i)
 
   printf(".\n");
 }
+#endif // USE_ADDRINFO
 
 int main(int argc, char **argv)
 {
@@ -68,8 +69,18 @@ int main(int argc, char **argv)
   {
     int ret;
 
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    printf("socket() returned %d (%s).\n", sock, (sock >= 0) ? "PASS": "FAIL");
+    if(sock < 0) break;
+
+#ifdef USE_ADDRINFO
+    char hostname[1024];
+    ret = gethostname(hostname, sizeof(hostname));
+    printf("hostname = %s.\n", hostname);
+    if(ret != 0) break;
+
     struct addrinfo *info;
-    ret = getaddrinfo(HOSTNAME, "80", NULL, &info);
+    ret = getaddrinfo(hostname, "80", NULL, &info);
     printf("getaddrinfo() returned %d (%s).\n", ret, (ret >= 0) ? "PASS": "FAIL");
     if(ret != 0) break;
     struct addrinfo *i = info;
@@ -78,24 +89,75 @@ int main(int argc, char **argv)
       print_addrinfo(i);
       i = i->ai_next;
     }
- 
-    int sock = socket(AF_INET,SOCK_STREAM, 0);
-    printf("socket() returned %d (%s).\n", sock, (sock >= 0) ? "PASS": "FAIL");
-    if(sock < 0) break;
 
-    ret = bind(sock, info->ai_addr, sizeof(*info->ai_addr));
+    /* Use the first IP Address. */
+    struct sockaddr_in *sin = (struct sockaddr_in *) info->ai_addr;
+    //inet_aton("172.17.8.100", &sin->sin_addr);
+    //sin->sin_port = htons(1234);
+
+    ret = bind(sock, (struct sockaddr *) sin, sizeof(*sin));
     printf("bind() returned %d (%s).\n", ret, (ret == 0) ? "PASS": "FAIL");
     if(ret != 0) break;
+#endif // USE_ADDRINFO
+
+#ifdef USE_SIOCGIFCONF
+  struct ifconf ifconf;
+  struct ifreq ifr[50];
+  int ifs;
+  int i;
+
+  ifconf.ifc_buf = (char *) ifr;
+  ifconf.ifc_len = sizeof ifr;
+
+  if (ioctl(sock, SIOCGIFCONF, &ifconf) == -1) {
+    perror("ioctl");
+    return 0;
+  }
+
+  ifs = ifconf.ifc_len / sizeof(ifr[0]);
+  printf("interfaces = %d:\n", ifs);
+  ret = -1;
+  for (i = 0; i < ifs; i++) {
+    char ip[INET_ADDRSTRLEN];
+    struct sockaddr_in *s_in = (struct sockaddr_in *) &ifr[i].ifr_addr;
+
+    if (!inet_ntop(AF_INET, &s_in->sin_addr, ip, sizeof(ip))) {
+      perror("inet_ntop");
+      return 0;
+    }
+
+    printf("%s - %s\n", ifr[i].ifr_name, ip);
+
+    if(strcmp(ifr[i].ifr_name, "eth1") == 0)
+    {
+      struct sockaddr_in sin;
+      sin.sin_family = AF_INET;
+      sin.sin_addr = s_in->sin_addr;
+      sin.sin_port = htons(0);
+      ret = bind(sock, (struct sockaddr *) &sin, sizeof(sin));
+      printf("bind() returned %d (%s).\n", ret, (ret == 0) ? "PASS": "FAIL");
+    }
+  }
+  if(ret != 0) break;
+#endif // USE_SIOCGIFCONF
 
     ret = listen(sock, 10);
     printf("listen() returned %d (%s).\n", ret, (ret == 0) ? "PASS": "FAIL");
     if(ret != 0) break;
 
+    struct sockaddr accept_addr;
+    socklen_t       accept_addr_len = sizeof(accept_addr);
+    int accept_sock = accept(sock, &accept_addr, &accept_addr_len);
+    printf("accept() returned %d (%s).\n", accept_sock, (accept_sock != -1) ? "PASS": "FAIL");
+    if(accept_sock == -1) break;
+
     ret = close(sock);
     printf("close() returned %d (%s).\n", ret, (ret == 0) ? "PASS" : "FAIL");
     if(ret != 0) break;
 
+#ifdef USE_ADDRINFO
     freeaddrinfo(info);
+#endif
 
     /* Success.  */
     retval = 0;

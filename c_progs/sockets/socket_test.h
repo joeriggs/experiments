@@ -9,6 +9,9 @@
 
 #include <arpa/inet.h>
 
+#include <net/if.h>
+
+#include <sys/ioctl.h>
 #include <sys/socket.h>
 
 #endif // __SOCKET_TEST_H__
