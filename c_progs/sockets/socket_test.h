@@ -2,6 +2,7 @@
 #ifndef __SOCKET_TEST_H__
 #define __SOCKET_TEST_H__
 
+#include <errno.h>
 #include <netdb.h>
 #include <stdio.h>
 #include <string.h>

@@ -3,19 +3,39 @@
 
 int main(int argc, char **argv)
 {
-  int retval;
+  int retval = -1;
 
   printf("Socket Client\n");
 
-  int sock = socket(AF_INET,SOCK_STREAM, 0);
-  printf("socket() returned %d (%s).\n", sock, (sock >= 0) ? "PASS": "FAIL");
-  if(sock >= 0)
+  do
   {
+    int ret;
 
-    retval = close(sock);
-    printf("close() returned %d (%s).\n", retval, (retval == 0) ? "PASS" : "FAIL");
-  }
+    int sock = socket(AF_INET, SOCK_STREAM, 0);
+    printf("socket() returned %d (%s).\n", sock, (sock >= 0) ? "PASS": "FAIL");
+    if(sock < 0) break;
 
-  return 0;
+    struct sockaddr_in connect_info;
+    connect_info.sin_family = AF_INET;
+    connect_info.sin_port   = htons(32772);
+    inet_aton("172.17.8.101", &connect_info.sin_addr);
+    ret = connect(sock, (struct sockaddr *) &connect_info, sizeof(connect_info));
+    printf("connect() returned %d (%s).\n", ret, (ret == 0) ? "PASS": "FAIL");
+    if(ret != 0) { printf("%s\n", strerror(errno)); break; }
+
+    char read_buf[1024];
+    ret = read(sock, read_buf, sizeof(read_buf));
+    printf("read() returned %d (%s).\n", ret, (ret >= 0) ? "PASS" : "FAIL");
+
+    ret = close(sock);
+    printf("close() returned %d (%s).\n", ret, (ret == 0) ? "PASS" : "FAIL");
+    if(ret != 0) break;
+
+    /* Success.  */
+    retval = 0;
+
+  } while(0);
+
+  return retval;
 }
 

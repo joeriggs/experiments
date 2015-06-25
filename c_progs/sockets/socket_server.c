@@ -63,7 +63,9 @@ int main(int argc, char **argv)
 {
   int retval = -1;
 
-  printf("Socket Server\n");
+  int pid = fork();
+
+  printf("Socket Server (%d)\n", pid);
 
   do
   {
@@ -93,7 +95,7 @@ int main(int argc, char **argv)
     /* Use the first IP Address. */
     struct sockaddr_in *sin = (struct sockaddr_in *) info->ai_addr;
     //inet_aton("172.17.8.100", &sin->sin_addr);
-    //sin->sin_port = htons(1234);
+    sin->sin_port = htons(1234);
 
     ret = bind(sock, (struct sockaddr *) sin, sizeof(*sin));
     printf("bind() returned %d (%s).\n", ret, (ret == 0) ? "PASS": "FAIL");
@@ -128,14 +130,14 @@ int main(int argc, char **argv)
 
     printf("%s - %s\n", ifr[i].ifr_name, ip);
 
-    if(strcmp(ifr[i].ifr_name, "eth0") == 0)
+    if(strcmp(ifr[i].ifr_name, "eth1") == 0)
     {
       struct sockaddr_in sin;
       sin.sin_family = AF_INET;
       sin.sin_addr = s_in->sin_addr;
-      sin.sin_port = htons(0);
+      sin.sin_port = (pid == 0) ? htons(1234) : htons(1235);
       ret = bind(sock, (struct sockaddr *) &sin, sizeof(sin));
-      printf("bind() returned %d (%s).\n", ret, (ret == 0) ? "PASS": "FAIL");
+      printf("bind(%d) returned %d (%s).\n", ntohs(sin.sin_port), ret, (ret == 0) ? "PASS": "FAIL");
     }
   }
   if(ret != 0) break;
@@ -150,6 +152,11 @@ int main(int argc, char **argv)
     int accept_sock = accept(sock, &accept_addr, &accept_addr_len);
     printf("accept() returned %d (%s).\n", accept_sock, (accept_sock != -1) ? "PASS": "FAIL");
     if(accept_sock == -1) break;
+
+    const char *write_msg = "This is a message from the socket_server.";
+    ret = write(accept_sock, write_msg, strlen(write_msg));
+    printf("write() returned %d (%s).\n", ret, (ret == strlen(write_msg)) ? "PASS": "FAIL");
+    if(ret != strlen(write_msg)) break;
 
     ret = close(sock);
     printf("close() returned %d (%s).\n", ret, (ret == 0) ? "PASS" : "FAIL");
