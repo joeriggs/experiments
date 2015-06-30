@@ -170,11 +170,14 @@ calculator_infix2postfix(calculator *this)
   /* Start with an empty stack and a brand new postfix_list. */
   if(this->postfix_list != (list *) 0)
   {
-    retcode = (list_delete(this->postfix_list) == true);
+    if((retcode = list_delete(this->postfix_list)) == false)
+    {
+      return retcode;
+    }
     this->postfix_list = (list *) 0;
   }
-  if( (retcode == false) ||
-     ((retcode = ((tmp_stack = stack_new()) != (stack *) 0)) == false) ||
+
+  if(((retcode = ((tmp_stack = stack_new()) != (stack *) 0)) == false) ||
      ((retcode = ((this->postfix_list = list_new()) != (list *) 0)) == false) )
   {
     stack_delete(tmp_stack);

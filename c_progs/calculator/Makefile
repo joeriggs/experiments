@@ -1,16 +1,24 @@
 
-OBJ = main.o       \
-      bcd.o        \
-      calculator.o \
-      fp_exp.o     \
-      hex.o        \
-      list.o       \
-      operand.o    \
-      operator.o   \
-      raw_stdin.o  \
-      stack.o
+BASE_OBJS = bcd.o        \
+            calculator.o \
+            fp_exp.o     \
+            hex.o        \
+            list.o       \
+            operand.o    \
+            operator.o   \
+            raw_stdin.o  \
+            stack.o
 
-TARGET = calculator
+TEST ?= 0
+ifeq ($(TEST), 1)
+	OBJS = test.o $(BASE_OBJS)
+	BUILD_FLAGS += -DTEST
+	TARGET = test
+else
+	OBJS = main.o $(BASE_OBJS)
+	TARGET = calculator
+
+endif
 
 DEBUG ?= 0
 ifeq ($(DEBUG), 1)
@@ -20,10 +28,10 @@ else
 endif
 
 %.o: %.c
-	gcc $(DEBUG_FLAGS) -Wall -Werror -c -o $@ $<
+	gcc $(BUILD_FLAGS) $(DEBUG_FLAGS) -Wall -Werror -c -o $@ $<
 
-$(TARGET): $(OBJ)
+$(TARGET): $(OBJS)
 
 clean:
-	rm -f $(OBJ) $(TARGET)
+	rm -f $(OBJS) $(TARGET)
 

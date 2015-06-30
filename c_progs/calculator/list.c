@@ -67,8 +67,8 @@ list_new(void)
  *   this = A pointer to the list object.
  *
  * Output:
- *   Returns 0 if successful.
- *   Returns 1 if not successful.
+ *   Returns true if successful.
+ *   Returns false if not successful.
  */
 bool
 list_delete(list *this)
