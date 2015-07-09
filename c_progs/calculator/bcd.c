@@ -21,9 +21,18 @@
  ****************************** CLASS DEFINITION ******************************
  *****************************************************************************/
 
-typedef uint64_t significand_t;
-#define BCD_MAX_DIGITS (sizeof(significand_t) * 2)
-#define SIGNIFICAND_FMT "0x%016llX"
+#define BCD_NUM_DIGITS 16 // Must be a multiple of 8
+
+typedef uint32_t significand_section_t;
+typedef uint64_t significand_large_section_t;
+#define SIGNIFICAND_DIGITS_PER_SECTION (sizeof(significand_section_t) * 2)
+#define SIGNIFICAND_SECTIONS (BCD_NUM_DIGITS / SIGNIFICAND_DIGITS_PER_SECTION)
+typedef struct { significand_section_t s[SIGNIFICAND_SECTIONS]; } significand_t;
+
+#define SIGNIFICAND_ADD_HALF_VAL1              0x066666666ll
+#define SIGNIFICAND_ADD_HALF_VAL2              0x111111110ll
+#define SIGNIFICAND_SECTION_MASK                0xFFFFFFFF
+#define SIGNIFICAND_SECT_TENS_COMPLEMENT_VAL    0x99999999
 
 /* This is the bcd class. */
 struct bcd {
@@ -50,8 +59,501 @@ struct bcd {
 };
   
 /******************************************************************************
+ ******************************** PRIMITIVES **********************************
+ *****************************************************************************/
+
+/* Given a significand_section_t, return the digit at the specified offset.  The
+ * offset is relative to the left-hand side of the section.  For example, if the
+ * section currently contains the number "98765432" and you request offset
+ * 2, you will get the number 7.
+ *
+ * Input:
+ *   section = The section.
+ *
+ *   offset  = The offset into the section.
+ *
+ * Output:
+ *   If success, returns the digit.
+ *   If failure, returns 0xF.
+ */
+static uint8_t
+bcd_sect_get_byte(significand_section_t section,
+                  int                   offset)
+{
+  uint8_t retval = 0xF;
+
+  if(offset < SIGNIFICAND_DIGITS_PER_SECTION)
+  {
+    int shift = (((SIGNIFICAND_DIGITS_PER_SECTION - 1) - offset) * 4);
+    uint32_t tmp = ((section >> shift) & 0xF);
+    retval = tmp;
+  }
+
+  return retval;
+}
+
+/* Given a significand_section_t, set the digit at the specified offset.  The
+ * offset is relative to the left-hand side of the section.  For example, if the
+ * section currently contains the number "98765432" and you want to set the
+ * value at offset 2 to 0, the result will be "98065432".
+ *
+ * Input:
+ *   section = A pointer to the section.
+ *
+ *   offset  = The offset into the section.
+ *
+ *   value   = The value to set in section[offset].
+ *
+ * Output:
+ *   Return true  if success.  The value is set.
+ *   Return false if failure.
+ */
+static bool
+bcd_sect_set_byte(significand_section_t *section,
+                  int                    offset,
+                  uint8_t                value)
+{
+  bool retcode = false;
+
+  if(offset < SIGNIFICAND_DIGITS_PER_SECTION)
+  {
+    /* Calculate the number of bits positions we need to shift value (to the
+     * left) in order to line it up with section[offset]. */
+    int shift = (((SIGNIFICAND_DIGITS_PER_SECTION - 1) - offset) * 4);
+
+    /* Clear the current value from section[offset]. */
+    significand_section_t mask1 = SIGNIFICAND_SECTION_MASK;
+    significand_section_t mask2 = (0xF << shift);
+    mask1 ^= mask2;
+    *section &= mask1;
+
+    /* Now insert value. */
+    significand_section_t shifted_val = ((significand_section_t) value) << shift;
+    *section |= shifted_val;
+
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+/* Given a significand, return the digit at the specified offset.  The offset
+ * is relative to the left-hand side of the number.  For example, if the
+ * significand currently contains the number "987654" and you request offset
+ * 2, you will get the number 7.
+ *
+ * Input:
+ *   significand = A pointer to the significand.
+ *
+ *   offset      = The offset into the significand.
+ *
+ * Output:
+ *   If success, returns the digit.
+ *   If failure, returns 0xF.
+ */
+static uint8_t
+bcd_sig_get_byte(significand_t *significand,
+                 int            offset)
+{
+  uint8_t retval = 0xF;
+
+  if( (significand != (significand_t *) 0) && (offset < BCD_NUM_DIGITS) )
+  {
+    int index = offset / SIGNIFICAND_DIGITS_PER_SECTION;
+    int section_offset = (offset % 8);
+    retval = bcd_sect_get_byte(significand->s[index], section_offset);
+  }
+
+  return retval;
+}
+
+/* Given a significand, set the digit at the specified offset.  The offset
+ * is relative to the left-hand side of the section.  For example, if the number
+ * currently contains the number "98765432" and you want to set the value at
+ * offset 2 to 0, the result will be "98065432".
+ *
+ * Input:
+ *   significand = A pointer to the significand.
+ *
+ *   offset      = The offset into the significand.
+ *
+ *   value       = The value to set in significand[offset].
+ *
+ * Output:
+ *   Return true  if success.  The value is set.
+ *   Return false if failure.
+ */
+static bool
+bcd_sig_set_byte(significand_t *significand,
+                 int            offset,
+                 int            value)
+{
+  bool retcode = false;
+
+  if( (significand != (significand_t *) 0) && (offset < BCD_NUM_DIGITS) )
+  {
+    int index = offset / SIGNIFICAND_DIGITS_PER_SECTION;
+    int section_offset = (offset % 8);
+    retcode = bcd_sect_set_byte(&significand->s[index], section_offset, value);
+  }
+
+  return retcode;
+}
+
+/* Shift the significand left or right by the specified number of places.
+ *
+ * Input:
+ *   sig   = A pointer to the significand.
+ *
+ *   shift = The number of places to shift.
+ *           - A positive number indicates a right shift.
+ *           - A negative number indicates a left shift.
+ *           - Zero indicates no shift.
+ *
+ * Output:
+ *   true  = success.  op and exp have been adjusted.
+ *   false = failure.  The states of op and exp are undefined.
+ */
+static bool
+bcd_shift_significand(significand_t *sig,
+                      int16_t        shift)
+{
+  bool retcode = false;
+
+  if(sig != (significand_t *) 0)
+  {
+    int i;
+
+    /* Left shift starts at the beginning of the number. */
+    if(shift < 0)
+    {
+      for(i = 0; i < BCD_NUM_DIGITS; i++)
+      {
+        int src_offset = i - shift;
+        int dst_offset = i;
+        uint8_t c = (src_offset >= BCD_NUM_DIGITS) ? 0 : bcd_sig_get_byte(sig, src_offset);
+        if((retcode = bcd_sig_set_byte(sig, dst_offset, c)) != true)
+        {
+          break;
+        }
+      }
+    }
+
+    /* Right shift starts at the end. */
+    else if(shift > 0)
+    {
+      for(i = (BCD_NUM_DIGITS - 1); i >= 0; i--)
+      {
+        int src_offset = i - shift;
+        int dst_offset = i;
+        uint8_t c = (src_offset < 0) ? 0 : bcd_sig_get_byte(sig, src_offset);
+        if((retcode = bcd_sig_set_byte(sig, dst_offset, c)) != true)
+        {
+          break;
+        }
+      }
+    }
+   
+
+    /* No shift is okay too. */
+    else
+    {
+      retcode = true;
+    }
+  }
+
+  return retcode;
+}
+
+/* Initialize a significand to zero.
+ *
+ * Input:
+ *   significand = A pointer to the significand.
+ *
+ * Output:
+ *   true  = success.  The significand is now set to zero.
+ *   false = failure.
+ */
+static bool
+bcd_sig_initialize(significand_t *significand)
+{
+  bool retcode = false;
+
+  if(significand != (significand_t *) 0)
+  {
+    int i;
+    for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+    {
+      significand->s[i] = 0;
+    }
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+/* Check to see if a significand is zero.
+ *
+ * Input:
+ *   significand = A pointer to the significand.
+ *
+ * Output:
+ *   Returns true if it's zero.
+ *   Returns false if it's not zero, or if significand is an invalid pointer.
+ */
+static bool
+bcd_sig_is_zero(significand_t *significand)
+{
+  bool retcode = false;
+
+  if(significand != (significand_t *) 0)
+  {
+    int i;
+    for(i = 0; (i < SIGNIFICAND_SECTIONS) && (significand->s[i] == 0); i++);
+    if(i == SIGNIFICAND_SECTIONS)
+    {
+      retcode = true;
+    }
+  }
+
+  return retcode;
+}
+
+/* Make a copy of a significand.
+ *
+ * Input:
+ *   src = A pointer to the original.
+ *
+ *   dst = A pointer to the copy.
+ *
+ * Output:
+ *   true  = success.  *dst == *src.
+ *   false = failure.
+ */
+static bool
+bcd_sig_copy(significand_t *src,
+             significand_t *dst)
+{
+  bool retcode = false;
+
+  if( (src != (significand_t *) 0) && (dst != (significand_t *) 0) )
+  {
+    int i;
+    for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+    {
+      dst->s[i] = src->s[i];
+    }
+    retcode = true;
+  }
+
+  return retcode;
+}
+
+/* Compare 2 significands.
+ *
+ * Input:
+ *   src      = A pointer to one of the significands.
+ *
+ *   src_mask = [optional] A bitmask to use against *src before the compare.
+ *              The bitmask allows this method to compare part of *src against
+ *              *dst.
+ *
+ *   dst      = A pointer to the other significand.
+ *
+ *   dst_mask = [optional] A bitmask to use against *dst before the compare.
+ *              The bitmask allows this method to compare part of *dst against
+ *              *src.
+ *
+ * Output:
+ *   -1 if *src < *dst.
+ *    0 if *src == *dst.
+ *    1 if *src > *dst.
+ */
+static int
+bcd_sig_cmp(significand_t *src,
+            significand_t *src_mask,
+            significand_t *dst,
+            significand_t *dst_mask)
+{
+  int retval = 0;
+
+  if( (src != (significand_t *) 0) && (dst != (significand_t *) 0) )
+  {
+    int i;
+    for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+    {
+      significand_section_t src_section = src->s[i];
+      if(src_mask != (significand_t *) 0)
+      {
+        src_section &= src_mask->s[i];
+      }
+
+      significand_section_t dst_section = dst->s[i];
+      if(dst_mask != (significand_t *) 0)
+      {
+        dst_section &= dst_mask->s[i];
+      }
+
+      if( src_section  < dst_section) { retval = -1; break; }
+      if( src_section  > dst_section) { retval =  1; break; }
+    }
+  }
+
+  return retval;
+}
+
+/* Count the number of significant digits in the significand.
+ *
+ * Input:
+ *   significand = A pointer to the significand.
+ *
+ * Output:
+ *   Returns the number of significant digits.
+ *   If an error occurs, it returns -1.
+ */
+static int
+bcd_sig_num_digits(significand_t *significand)
+{
+  int retval = -1;
+
+  if(significand != (significand_t *) 0)
+  {
+    /* If the number is zero, then there are zero significant digits. */
+    if(bcd_sig_is_zero(significand) == true)
+    {
+      retval = 0;
+    }
+
+    /* If the number is NOT zero, then we need to count the number of
+     * insignificant digits. */
+    else
+    {
+      int i;
+      for(i = BCD_NUM_DIGITS; i > 0; i--)
+      {
+        if(bcd_sig_get_byte(significand, (i - 1)) != 0)
+        {
+          retval = i;
+          break;
+        }
+      }
+    }
+  }
+
+  return retval;
+}
+
+/******************************************************************************
  ******************************** PRIVATE API *********************************
  *****************************************************************************/
+
+#if defined(DEBUG)
+/* This function will convert a significand_section_t to an ASCII string.  It
+ * returns a pointer to the string.
+ *
+ * WARNING: This function will maintain a limited number of buffers that can
+ *          hold a string.  The caller doesn't need to free the string after
+ *          they use it, but they shouldn't hold onto it for a long time and
+ *          expect it to remain the same.  The purpose of this member is to
+ *          provide a string that can be used to debug/test purposes.  It's not
+ *          production-quality code.  Use it as it was intended to be used!
+ *
+ * Input:
+ *   section = The significand_section_t to convert.
+ *
+ * Output:
+ *   If success, returns a pointer to a buffer that contains the string.
+ *   If failure, returns a pointer to the string "UNKNOWN".
+ */
+static const char *
+bcd_sig_section_to_str(significand_section_t section)
+{
+  char *retval = "UNKNOWN";
+
+  /* This is a collection of buffers that is used for building strings.
+   * NOTE: The size has to be a power of 2. */
+  static char *sig_msgs[16] = { 0 };
+  static char  sig_msgs_size = (sizeof(sig_msgs) / sizeof(sig_msgs[0]));
+  static int   sig_msgs_index = 0;
+
+  /* We allocate the pointer the first time we need it. */
+  if(sig_msgs[sig_msgs_index] == (char *) 0)
+  {
+    sig_msgs[sig_msgs_index] = (char *) malloc(SIGNIFICAND_DIGITS_PER_SECTION + 1);
+  }
+
+  if(sig_msgs[sig_msgs_index] != (char *) 0)
+  {
+    retval = sig_msgs[sig_msgs_index];
+    sig_msgs_index = ((sig_msgs_index + 1) % sig_msgs_size);
+
+    /* Create the string now. */
+    int i;
+    for(i = 0; i < SIGNIFICAND_DIGITS_PER_SECTION; i++)
+    {
+      char c = bcd_sect_get_byte(section, i);
+      retval[i] = (c > 9) ? (c + 0x37) : (c + 0x30);
+    }
+    retval[i] = 0;
+  }
+
+  return retval;
+}
+
+/* This function will convert a significand_t to an ASCII string.  It returns a
+ * pointer to the string.
+ *
+ * WARNING: This function will maintain a limited number of buffers that can
+ *          hold a string.  The caller doesn't need to free the string after
+ *          they use it, but they shouldn't hold onto it for a long time and
+ *          expect it to remain the same.  The purpose of this member is to
+ *          provide a string that can be used to debug/test purposes.  It's not
+ *          production-quality code.  Use it as it was intended to be used!
+ *
+ * Input:
+ *   significand = The significand to convert.
+ *
+ * Output:
+ *   If success, returns a pointer to a buffer that contains the string.
+ *   If failure, returns a pointer to the string "UNKNOWN".
+ */
+static const char *
+bcd_sig_to_str(significand_t *significand)
+{
+  char *retval = "UNKNOWN";
+
+  /* This is a collection of buffers that is used for building strings.
+   * NOTE: The size has to be a power of 2. */
+  static char *sig_msgs[16] = { 0 };
+  static char  sig_msgs_size = (sizeof(sig_msgs) / sizeof(sig_msgs[0]));
+  static int   sig_msgs_index = 0;
+
+  if(significand != (significand_t *) 0)
+  {
+    /* We allocate the pointer the first time we need it. */
+    if(sig_msgs[sig_msgs_index] == (char *) 0)
+    {
+      sig_msgs[sig_msgs_index] = (char *) malloc(BCD_NUM_DIGITS + 1);
+    }
+
+    if(sig_msgs[sig_msgs_index] != (char *) 0)
+    {
+      retval = sig_msgs[sig_msgs_index];
+      sig_msgs_index = ((sig_msgs_index + 1) % sig_msgs_size);
+      retval[0] = 0;
+
+      /* Create the string now. */
+      int i;
+      for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+      {
+        strcat(retval, bcd_sig_section_to_str(significand->s[i]));
+      }
+    }
+  }
+
+  return retval;
+}
+#endif // DEBUG
 
 /* This is a utility function.  You pass it a significand/exponent/sign, and it
  * creates a Sxxx.xxx ASCII string for you.  It does nothing fancy beyond that.
@@ -61,20 +563,18 @@ struct bcd {
  * expects the number to fit in a regular decimal notation.
  *
  * Input:
- *   significand = The 0 - 16 BCD digits.
+ *   significand       = A pointer to the BCD digits.
  *
  *   exponent          = The exponent.  It tells us where to place the decimal
  *                       point.
  *
- *   char_count        = Once again, this is used in situations where the user
- *                       is typing in a number.  It tells us how many digits
- *                       they have typed.  It's particularly useful for
- *                       situations where they're typing zeroes after the
- *                       decimal point (ex, 0.00000).  We want to display all
- *                       the characters they've typed, even if it means we have
- *                       to display a bunch of insignificant zeroes.
- *                       (if char_count == 0), then ignore char_count and
- *                       got_decimal_point.
+ *   char_count        = This is used in situations where the user is typing in
+ *                       a number.  It tells us how many digits they have typed.
+ *                       It's particularly useful for situations where they're
+ *                       typing zeroes after the decimal point (ex, 0.00000).
+ *                       We want to display all of the characters they've typed,
+ *                       even if it means displaying a bunch of insignificant
+ *                       zeroes.
  *
  *   got_decimal_point = true if we need to insert the decimal point.  You will
  *                       see this in situations where we're capturing the
@@ -95,26 +595,29 @@ struct bcd {
  *   false = failure.  The contents of buf are undefined.
  */
 static bool
-bcd_to_str_decimal(significand_t significand,
-                   int16_t       exponent,
-                   int           char_count,
-                   bool          got_decimal_point,
-                   uint8_t       sign,
-                   char         *buf,
-                   size_t        buf_size)
+bcd_to_str_decimal(significand_t *significand,
+                   int16_t        exponent,
+                   int            char_count,
+                   bool           got_decimal_point,
+                   uint8_t        sign,
+                   char          *buf,
+                   size_t         buf_size)
 {
   bool retcode = false;
 
-  /* We need a buffer, and the number has to fit within 16 digits. */
-  if((buf != (char *) 0) && (buf_size > 0) &&
-     (exponent <  16)    && (exponent > -16))
+  /* We need a buffer that's big enough to hold the number, and the number
+   * has to fit within BCD_NUM_DIGITS digits. */
+  int16_t max_exp = (BCD_NUM_DIGITS - 1);
+  int16_t min_exp = (0 - max_exp);
+  if( (buf != (char *) 0) && (buf_size > BCD_NUM_DIGITS) &&
+      (exponent <= max_exp) && (exponent >= min_exp) )
   {
     int buf_x = 0;
 
     do
     {
-      DBG_PRINT("%s(): 0x%016llX, %d, %d, %d.\n", __func__,
-                significand, exponent, got_decimal_point, sign);
+      DBG_PRINT("%s(): %s, %d, %d, %d.\n", __func__,
+                bcd_sig_to_str(significand), exponent, got_decimal_point, sign);
 
       /* If it's a negative number insert the sign now.  Even -0 gets a sign. */
       if(sign != 0)
@@ -152,23 +655,16 @@ bcd_to_str_decimal(significand_t significand,
       if(digit_count == 0)
       {
         /* Count the non-zero digits in the significand. */
-        int i;
-        for(i = 0; i < BCD_MAX_DIGITS; i++)
-        {
-          significand_t mask = (0x000000000000000Fll << (i * 4));
-          if(significand & mask)
-          {
-            break;
-          }
-        }
-        digit_count = max((BCD_MAX_DIGITS - i), (exponent + 1));
+        int i = bcd_sig_num_digits(significand);
+        if(i == -1) break;
+
+        digit_count = max(i, (exponent + 1));
       }
 
-      int digit_position = (BCD_MAX_DIGITS - 1);
+      int digit_position = 0;
       for( ; digit_count > 0; digit_count--)
       {
-        int shift = (digit_position-- * 4);
-        char c = (significand >> shift) & 0xF;
+        char c = bcd_sig_get_byte(significand, digit_position++);
 
         /* Insert the digit. */
         if(--buf_size == 0) { break; } else { buf[buf_x++] = (c | 0x30); }
@@ -188,43 +684,44 @@ bcd_to_str_decimal(significand_t significand,
   return retcode;
 }
 
-/* Perform a straight addition of 2 significands that are guaranteed to not
- * overflow past the top of a significand_t.  The typical use of this method
- * would be to pass in 2 values that are exactly half of a significand_t in size
- * (for example, if a significand_t is 64-bits, the caller would pass in 2 32-bit
- * values to add).  This ensure the entire sum will fit in a significand_t val.
- * Then the caller can deal with overflow.
+/* Perform a straight addition of 2 sections of a significand.  The caller
+ * passes an extra large value to store the result so we don't have to worry
+ * about overflow.  We simply add the 2 values and place the sum in the large
+ * container.  If there was a carry above the size of a regular
+ * significand_section_t, the caller will handle it.
  *
  * Input:
- *   val1   = One of the significands.
+ *   val1   = One significand_section_t value.
  *
- *   val2   = One of the significands.
+ *   val2   = One significand_section_t value.
  *
- *   dst   = A pointer to the place to store the result.  Note that dst can
- *           point to val1 or val2.
+ *   dst    = A pointer to the place to store the result.  Note that the result
+ *            might carry up into the upper-half of *dst.
  *
  * Output:
  *   true  = success.  *dst contains the sum.
  *   false = failure.  *dst is undefined.
  */
 static bool
-bcd_add_32bits(significand_t  val1,
-               significand_t  val2,
-               significand_t *dst)
+bcd_add_half_width(significand_section_t        val1,
+                   significand_section_t        val2,
+                   significand_large_section_t *dst)
 {
   bool retcode = false;
 
-  if(dst != (significand_t *) 0)
+  if(dst != (significand_large_section_t *) 0)
   {
-//    DBG_PRINT("%s(%08llX %08llX)\n", __func__, val1, val2);
-    significand_t t1 = val1 + 0x066666666ll;
-    significand_t t2 = t1 + val2;
-    significand_t t3 = t1 ^ val2;
-    significand_t t4 = t2 ^ t3;
-    significand_t t5 = ~t4 & 0x111111110ll;
-    significand_t t6 = (t5 >> 2) | (t5 >> 3);
+    DBG_PRINT("%s(%s %s)\n", __func__, bcd_sig_section_to_str(val1), bcd_sig_section_to_str(val2));
+    significand_large_section_t t1 = val1 + SIGNIFICAND_ADD_HALF_VAL1;
+    significand_large_section_t t2 = t1 + val2;
+    significand_large_section_t t3 = t1 ^ val2;
+    significand_large_section_t t4 = t2 ^ t3;
+    significand_large_section_t t5 = ~t4 & SIGNIFICAND_ADD_HALF_VAL2;
+    significand_large_section_t t6 = (t5 >> 2) | (t5 >> 3);
     *dst = t2 - t6;
-//    DBG_PRINT("%s(): SUM %08llX\n", __func__, *dst);
+    DBG_PRINT("%s(): SUM %s:%s.\n", __func__,
+              bcd_sig_section_to_str((*dst) >> (SIGNIFICAND_DIGITS_PER_SECTION * 4)),
+              bcd_sig_section_to_str(*dst));
 
     retcode = true;
   }
@@ -237,18 +734,21 @@ bcd_add_32bits(significand_t  val1,
  * nothing more than add the 2 significands and returns the result.
  *
  * Input:
- *   val1      = One of the significands.
+ *   val1      = A pointer to one of the significands.
  *
- *   val2      = One of the significands.
+ *   val2      = A pointer to one of the significands.
  *
  *   dst       = A pointer to the place to store the result.  Note that dst can
  *               point to val1 or val2.
  *
- *   carry     = A pointer to a variable that will be set to true if a carry
- *               occurs at the end of the addition (ex. 8 + 5 = 13 is a carry).
- *               You can pass in a NULL.  Only pass in a non-NULL if you want
- *               to check for carry.  It's a manual operation in this function,
- *               so don't request it if you don't need it.
+ *   carry     = [optional] A pointer to a variable that will be set to true if
+ *                          a carry occurs "at the end" of the addition.
+ *               NULL = Do NOT check for carry.  Only pass in a non-NULL if you
+ *                      really want to check for carry.  It's a manual operation
+ *                      in this function, so don't request it unless you need it.
+ *               Examples of when carry is set or not set:
+ *                   8 + 5 = 13 is what we're looking for.
+ *                  35 + 7 = 42 is NOT what we're looking for.
  *
  *   overflow  = A pointer to a variable that will receive the overflow if the
  *               sum doesn't fit in *dst.
@@ -258,73 +758,81 @@ bcd_add_32bits(significand_t  val1,
  *   false = failure.  *dst and *overflow are undefined.
  */
 static bool
-bcd_significand_add(significand_t  val1,
-                    significand_t  val2,
+bcd_significand_add(significand_t *val1,
+                    significand_t *val2,
                     significand_t *dst,
                     bool          *carry,
                     uint8_t       *overflow)
 {
   bool retcode = false;
 
-  if((dst != (significand_t *) 0) && (overflow != (uint8_t *) 0))
+  if( (    val1 != (significand_t *) 0) &&
+      (    val2 != (significand_t *) 0) &&
+      (     dst != (significand_t *) 0) &&
+      (overflow != (uint8_t *) 0) )
   {
-//    DBG_PRINT("%s(" SIGNIFICAND_FMT ", " SIGNIFICAND_FMT ")\n", __func__, val1, val2);
+    DBG_PRINT("%s(%s, %s)\n", __func__, bcd_sig_to_str(val1), bcd_sig_to_str(val2));
 
     do
     {
-      /* If we the caller requested a carry check, locate the high-order
-       * significant digit before we add.  This will set carry_digit to the
-       * highest non-zero digit in val1 and val2. */
+      /* If we're checking for carry, locate the high-order significant digit
+       * before we add.  carry_digit is set to the highest non-zero digit in
+       * val1 and val2. */
       int carry_digit = 0;
       if(carry != (bool *) 0)
       {
-        for(carry_digit = (BCD_MAX_DIGITS - 1); carry_digit > 0; carry_digit--)
+        for(carry_digit = 0; carry_digit < BCD_NUM_DIGITS; carry_digit++)
         {
-          int mask_shift = (carry_digit * 4);
-          significand_t mask = 0xF;
-          mask <<= mask_shift;
-          if( ((val1 & mask) != 0) || ((val2 & mask) != 0) )
+          if( (bcd_sig_get_byte(val1, carry_digit) != 0) || (bcd_sig_get_byte(val2, carry_digit) != 0) )
           {
             break;
           }
         }
       }
 
-      significand_t a_lo = ((val1 >>  0) & 0x00000000FFFFFFFFll);
-      significand_t a_hi = ((val1 >> 32) & 0x00000000FFFFFFFFll);
-      significand_t b_lo = ((val2 >>  0) & 0x00000000FFFFFFFFll);
-      significand_t b_hi = ((val2 >> 32) & 0x00000000FFFFFFFFll);
+      /* We'll change this if we encounter an actual overflow. */
+      *overflow = 0;
 
-      /* Add the lower 32-bits. */
-      significand_t tot_lo;
-      if((retcode = bcd_add_32bits(a_lo, b_lo, &tot_lo)) != true) { break; }
-//      DBG_PRINT("%s(1): " SIGNIFICAND_FMT "\n", __func__, tot_lo);
-      *dst = (tot_lo & 0xFFFFFFFF);
+      /* Loop through all of the significand_section_t chunks, starting with
+       * the least significant. */
+      int i;
+      for(i = (SIGNIFICAND_SECTIONS - 1); i >= 0; i--)
+      {
+        significand_large_section_t sum;
 
-      /* Carry to the high-order 32-bits. */
-      significand_t tmp_carry = ((tot_lo >> 32) & 0xF);
-      if((retcode = bcd_add_32bits(a_hi, tmp_carry, &a_hi)) != true) { break; }
-//      DBG_PRINT("%s(2): " SIGNIFICAND_FMT "\n", __func__, a_hi);
+        /* Add the 2 sections. */
+        if((retcode = bcd_add_half_width(val1->s[i], val2->s[i], &sum)) != true) { break; }
+        dst->s[i] = (sum & SIGNIFICAND_SECTION_MASK);
+        DBG_PRINT("%s() LOOP: %s\n", __func__, bcd_sig_section_to_str(dst->s[i]));
 
-      /* Add the high 32-bits. */
-      significand_t high32;
-      if((retcode = bcd_add_32bits(a_hi, b_hi, &high32)) != true) { break; }
-//      DBG_PRINT("%s(3): " SIGNIFICAND_FMT "\n", __func__, high32);
+        /* Handle carry. */
+        if((sum >> (SIGNIFICAND_DIGITS_PER_SECTION * 4)) > 0)
+        {
+          if(i > 0)
+          {
+            uint8_t tmp_overflow;
+            significand_t ovf = { .s = { 0 } };
+            ovf.s[i - 1] = 1;
+            if(bcd_significand_add(val1, &ovf, val1, 0, &tmp_overflow) != true) { break; }
+            *overflow += tmp_overflow;
+          }
+          else
+          {
+            (*overflow)++;
+          }
+        }
+      }
 
-      *dst |= ((high32 & 0x00000000FFFFFFFFll) << 32);
-      *overflow = ((high32 >> 32) & 0xFF);
-//      DBG_PRINT("%s(4): " SIGNIFICAND_FMT ": 0x%X\n", __func__, *dst, *overflow);
+      DBG_PRINT("%s() AFTER LOOP: %s: 0x%X\n", __func__, bcd_sig_to_str(dst), *overflow);
 
       /* If the caller requested a carry check, check now to see if there
        * was a carry at the end. */
       if(carry != (bool *) 0)
       {
-        int mask_shift = (carry_digit + 1) * 4;
-        significand_t mask = 0xFFFFFFFFFFFFFFFFll << mask_shift;
-        *carry = ((*dst & mask) != 0ll) ? true : false;
+        *carry = (carry_digit > 0) ? ((bcd_sig_get_byte(dst, (carry_digit - 1)) != 0ll) ? true : false) : 0;
       }
 
-//      DBG_PRINT("%s(RES): " SIGNIFICAND_FMT ": 0x%X\n", __func__, *dst, *overflow);
+      DBG_PRINT("%s() RESULT: %s: 0x%X\n", __func__, bcd_sig_to_str(dst), *overflow);
       retcode = true;
     } while(0);
   }
@@ -332,12 +840,11 @@ bcd_significand_add(significand_t  val1,
   return retcode;
 }
 
-/* Perform a 10's complement on a BCD number.  This changes positives to
+/* Perform a 10's complement on a BCD significand.  This changes positives to
  * negatives and negatives to positives.
  *
  * Input:
- *   src  = The significand from the number.  We don't need the sign or
- *          exponent.
+ *   src  = A pointer to the significand.  We don't need the sign or exponent.
  *
  *   dst  = A pointer to the place to store the result.  Note that dst can
  *          point to src.
@@ -347,20 +854,27 @@ bcd_significand_add(significand_t  val1,
  *   false = failure.  *dst is undefined.
  */
 static bool
-bcd_tens_complement(significand_t  src,
+bcd_tens_complement(significand_t *src,
                     significand_t *dst)
 {
   bool retcode = false;
 
   if(dst != (significand_t *) 0)
   {
-//    DBG_PRINT("%s(): src: 0x%016llX.\n", __func__, src);
-    src = 0x9999999999999999ll - src;
+    DBG_PRINT("%s(): src: %s.\n", __func__, bcd_sig_to_str(src));
 
-    significand_t one = 1;
+    /* Do a 9's complement first. */
+    int i;
+    for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+    {
+      dst->s[i] = SIGNIFICAND_SECT_TENS_COMPLEMENT_VAL - src->s[i];
+    }
+
+    /* Now add 1 to complete the 10's complement. */
     uint8_t overflow;
-    retcode = bcd_significand_add(src, one, dst, NULL, &overflow);
-//    DBG_PRINT("%s(): dst: 0x%016llX.\n", __func__, *dst);
+    significand_t one = { .s[SIGNIFICAND_SECTIONS - 1] = 1 };
+    retcode = bcd_significand_add(dst, &one, dst, NULL, &overflow);
+    DBG_PRINT("%s(): dst: %s.\n", __func__, bcd_sig_to_str(dst));
   }
 
   return retcode;
@@ -390,28 +904,39 @@ bcd_make_exponents_equal(significand_t *op1,
 {
   bool retcode = false;
 
-  if((op1 != (significand_t *) 0) &&
-     (exp1 != (int16_t *) 0)      &&
-     (op2 != (significand_t *) 0) &&
-     (exp2 != (int16_t *) 0))
+  if((op1 != (significand_t *) 0) && (exp1 != (int16_t *) 0) &&
+     (op2 != (significand_t *) 0) && (exp2 != (int16_t *) 0))
   {
-    /* If the exponents aren't the same, adjust the smaller number up to the other. */
+    DBG_PRINT("%s(%p, %d, %p, %d).\n", __func__, op1, *exp1, op2, *exp2);
+
+    significand_t *tgt_sig = (significand_t *) 0;
+    int16_t       *tgt_exp = (int16_t *) 0;
+    int shift = 0;
     if(*exp1 > *exp2)
     {
-      DBG_PRINT("Adjusting op2 so its exponent(%d) equals the op1 exponent (%d).\n", *exp2, *exp1);
-      int shift = ((*exp1 - *exp2) * 4);
-      *op2 >>= shift;
-      *exp2 = *exp1;
+      DBG_PRINT("%s(): Adjusting op2 so its exponent equals the op1 exponent.\n", __func__);
+      tgt_sig = op2;
+      tgt_exp = exp2;
+      shift = *exp1 - *exp2;
     }
     else if(*exp1 < *exp2)
     {
-      DBG_PRINT("Adjusting op1 so its exponent(%d) equals the op2 exponent (%d).\n", *exp1, *exp2);
-      int shift = ((*exp2 - *exp1) * 4);
-      *op1 >>= shift;
-      *exp1 = *exp2;
+      DBG_PRINT("%s(): Adjusting op1 so its exponent equals the op2 exponent.\n", __func__);
+      tgt_sig = op1;
+      tgt_exp = exp1;
+      shift = *exp2 - *exp1;
     }
 
-    retcode = true;
+    /* If we need to adjust, do it here. */
+    if((tgt_sig != (significand_t *) 0) && (shift != 0))
+    {
+      *tgt_exp += shift;
+      retcode = bcd_shift_significand(tgt_sig, shift);
+    }
+    else
+    {
+      retcode = true;
+    }
   }
 
   return retcode;
@@ -420,30 +945,34 @@ bcd_make_exponents_equal(significand_t *op1,
 /* Shift the significand to remove leading zeroes.
  *
  * Input:
- *   op  = A pointer to the operand.
+ *   sig = A pointer to the significand.
  *
- *   exp = A pointer to the exponent for the operand.
+ *   exp = A pointer to the exponent for the significand.
  *
  * Output:
- *   true  = success.  op and exp have been adjusted.
- *   false = failure.  The states of op and exp are undefined.
+ *   true  = success.  sig and exp have been adjusted.
+ *   false = failure.  The states of sig and exp are undefined.
  */
 static bool
-bcd_shift_significand(significand_t *op,
-                      int16_t       *exp)
+bcd_sig_remove_leading_zeroes(significand_t *sig,
+                              int16_t       *exp)
 {
   bool retcode = false;
 
-  if((op != (significand_t *) 0) && (exp != (int16_t *) 0))
+  if((sig != (significand_t *) 0) && (exp != (int16_t *) 0))
   {
-    /* Clear out any leading zeroes in the significand. */
-    while( (*op != 0) && ((*op & 0xF000000000000000ll) == 0) )
+    /* Set the success retcode before we do the shift.  That way we'll be able
+     * to detect failures. */
+    retcode = true;
+
+    while((bcd_sig_is_zero(sig) == false) && (bcd_sig_get_byte(sig, 0) == 0))
     {
-      *op <<= 4;
+      if((retcode = bcd_shift_significand(sig, -1)) != true)
+      {
+        break;
+      }
       *exp = *exp - 1;
     }
-
-    retcode = true;
   }
 
   return retcode;
@@ -474,23 +1003,21 @@ bcd_op_add(bcd *op1,
   {
     do
     {
-      /* Start with the raw significands. */
-      significand_t a = op1->significand;
-      significand_t b = op2->significand;
-      DBG_PRINT("%s(): " SIGNIFICAND_FMT " + " SIGNIFICAND_FMT "\n", __func__, a, b);
+      significand_t *sig1 = &op1->significand;
+      significand_t *sig2 = &op2->significand;
+      DBG_PRINT("%s()           BEGIN: %s + %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
 
       /* If the exponents aren't the same, adjust the smaller number up to the other. */
-      if((retcode = bcd_make_exponents_equal(&a, &op1->exponent, &b, &op2->exponent)) != true) break;
+      if((retcode = bcd_make_exponents_equal(sig1, &op1->exponent, sig2, &op2->exponent)) != true) break;
 
-      /* If either number is negative, do a 10's complement before the addition
-       * step. */
-      if(op1->sign == true) { if((retcode = bcd_tens_complement(a, &a)) == false) break; }
-      if(op2->sign == true) { if((retcode = bcd_tens_complement(b, &b)) == false) break; }
-      DBG_PRINT("%s(1): " SIGNIFICAND_FMT ", " SIGNIFICAND_FMT "\n", __func__, a, b);
+      /* If either num is negative, do a 10's complement before the addition. */
+      if(op1->sign == true) { if((retcode = bcd_tens_complement(sig1, sig1)) == false) break; }
+      if(op2->sign == true) { if((retcode = bcd_tens_complement(sig2, sig2)) == false) break; }
+      DBG_PRINT("%s() 10'S COMPLEMENT: %s, %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
 
       uint8_t overflow;
-      if((retcode = bcd_significand_add(a, b, &op1->significand, NULL, &overflow)) != true) { break; }
-      DBG_PRINT("%s(2): " SIGNIFICAND_FMT "\n", __func__, op1->significand);
+      if((retcode = bcd_significand_add(sig1, sig2, sig1, NULL, &overflow)) != true) { break; }
+      DBG_PRINT("%s():         RESULT: %s: overflow %d\n", __func__, bcd_sig_to_str(sig1), overflow);
 
       /* If exactly one of the operands is negative:
        * - If we have overflow, then the result is positive.
@@ -500,7 +1027,7 @@ bcd_op_add(bcd *op1,
       {
         if(overflow == 0)
         {
-          if((retcode = bcd_tens_complement(op1->significand, &op1->significand)) == false) break;
+          if((retcode = bcd_tens_complement(sig1, sig1)) == false) break;
         }
         op1->sign = (overflow == 0) ? true : false;
       }
@@ -511,24 +1038,23 @@ bcd_op_add(bcd *op1,
         /* If the result is negative, do 10s complement now. */
         if(op1->sign == true)
         {
-          if((retcode = bcd_tens_complement(op1->significand, &op1->significand)) == false) break;
+          if((retcode = bcd_tens_complement(sig1, sig1)) == false) break;
           overflow ^= 1;
         }
 
         /* If overflow, shift significand, insert overflow, bump exponent. */
         if(overflow != 0)
         {
-          significand_t overflow_big = overflow;
-          op1->significand >>= 4;
-          op1->significand |= (overflow_big << 60);
+          if((retcode = bcd_shift_significand(sig1, 1)) != true) break;
+          if((retcode = bcd_sig_set_byte(sig1, 0, overflow)) != true) break;
           op1->exponent++;
         }
       }
-      DBG_PRINT("%s(3): " SIGNIFICAND_FMT " %d %d.\n", __func__, op1->significand, op1->exponent, op1->sign);
+      DBG_PRINT("%s()        OVERFLOW: %s %d %d.\n", __func__, bcd_sig_to_str(sig1), op1->exponent, op1->sign);
 
       /* Clear out any leading zeroes in the significand. */
-      if((retcode = bcd_shift_significand(&op1->significand, &op1->exponent)) != true) break;
-      DBG_PRINT("%s(4): " SIGNIFICAND_FMT " %d %d.\n", __func__, op1->significand, op1->exponent, op1->sign);
+      if((retcode = bcd_sig_remove_leading_zeroes(sig1, &op1->exponent)) != true) break;
+      DBG_PRINT("%s()    CLEAR ZEROES: %s %d %d.\n", __func__, bcd_sig_to_str(sig1), op1->exponent, op1->sign);
 
       /* Done.  Set the object to reflect the fact that we calculated the value.
        * This is no longer data that came in through bcd_add_char(). */
@@ -564,12 +1090,12 @@ bcd_op_sub(bcd *op1,
     do
     {
       /* Start with the raw significands. */
-      significand_t a = op1->significand;
-      significand_t b = op2->significand;
-      DBG_PRINT("%s() BEGIN: " SIGNIFICAND_FMT " - " SIGNIFICAND_FMT "\n", __func__, a, b);
+      significand_t *sig1 = &op1->significand;
+      significand_t *sig2 = &op2->significand;
+      DBG_PRINT("%s()           BEGIN: %s - %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
 
       /* If the exponents aren't the same, adjust the smaller number up to the other. */
-      if((retcode = bcd_make_exponents_equal(&a, &op1->exponent, &b, &op2->exponent)) != true) break;
+      if((retcode = bcd_make_exponents_equal(sig1, &op1->exponent, sig2, &op2->exponent)) != true) break;
 
       /* 10s complement (as required):
        * POS - POS  = 10's complement b.
@@ -577,13 +1103,13 @@ bcd_op_sub(bcd *op1,
        * NEG - POS  = NO 10's complement.
        * NEG - NEG  = 10's complement a.
        */
-      if((op1->sign == false) && (op2->sign == false)) { if((retcode = bcd_tens_complement(b, &b)) == false) break; }
-      if((op1->sign ==  true) && (op2->sign ==  true)) { if((retcode = bcd_tens_complement(a, &a)) == false) break; }
-      DBG_PRINT("%s() TENS: " SIGNIFICAND_FMT ", " SIGNIFICAND_FMT "\n", __func__, a, b);
+      if((op1->sign == false) && (op2->sign == false)) { if((retcode = bcd_tens_complement(sig2, sig2)) == false) break; }
+      if((op1->sign ==  true) && (op2->sign ==  true)) { if((retcode = bcd_tens_complement(sig1, sig1)) == false) break; }
+      DBG_PRINT("%s() 10'S COMPLEMENT: %s, %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
 
       uint8_t overflow;
-      if((retcode = bcd_significand_add(a, b, &op1->significand, NULL, &overflow)) != true) break;
-      DBG_PRINT("%s(): RESULT " SIGNIFICAND_FMT " CARRY %d.\n", __func__, op1->significand, overflow);
+      if((retcode = bcd_significand_add(sig1, sig2, sig1, NULL, &overflow)) != true) break;
+      DBG_PRINT("%s():         RESULT: %s CARRY: %d.\n", __func__, bcd_sig_to_str(sig1), overflow);
 
       /* 10s complement (as required) and set the result sign:
        * POS - POS  = Sign is defined by overflow.
@@ -596,8 +1122,8 @@ bcd_op_sub(bcd *op1,
         op1->sign = (overflow != 0) ? false : true;
         if(op1->sign == true)
         {
-          if((retcode = bcd_tens_complement(op1->significand, &op1->significand)) != true) break;
-          DBG_PRINT("%s(): NEGATIVE " SIGNIFICAND_FMT ".\n", __func__, op1->significand);
+          if((retcode = bcd_tens_complement(sig1, &op1->significand)) != true) break;
+          DBG_PRINT("%s():       NEGATIVE: %s.\n", __func__, bcd_sig_to_str(sig1));
         }
       }
       else
@@ -606,8 +1132,8 @@ bcd_op_sub(bcd *op1,
       }
 
       /* Clear out any leading zeroes in the significand. */
-      if((retcode = bcd_shift_significand(&op1->significand, &op1->exponent)) != true) break;
-      DBG_PRINT("%s() SHIFT: " SIGNIFICAND_FMT " %d %d.\n", __func__, op1->significand, op1->exponent, op1->sign);
+      if((retcode = bcd_sig_remove_leading_zeroes(sig1, &op1->exponent)) != true) break;
+      DBG_PRINT("%s():          SHIFT: %s %d %d.\n", __func__, bcd_sig_to_str(sig1), op1->exponent, op1->sign);
 
       /* Done.  Set the object to reflect the fact that we calculated the value.
        * This is no longer data that came in through bcd_add_char(). */
@@ -640,89 +1166,116 @@ bcd_op_mul(bcd *op1,
   {
     do
     {
-      /* Normalize both numbers before we begin.  We need the exponents. */
-      if((retcode = bcd_shift_significand(&op1->significand, &op1->exponent)) != true) break;
-      if((retcode = bcd_shift_significand(&op2->significand, &op2->exponent)) != true) break;
-
       /* Start with the raw significands. */
-      significand_t a = op1->significand;
-      significand_t b = op2->significand;
-      DBG_PRINT("%s() BEGIN: " SIGNIFICAND_FMT " * " SIGNIFICAND_FMT "\n", __func__, a, b);
+      significand_t *sig1 = &op1->significand;
+      significand_t *sig2 = &op2->significand;
+      DBG_PRINT("%s():          BEGIN: %s * %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
+
+      /* Normalize both numbers before we begin.  We need the exponents. */
+      if((retcode = bcd_sig_remove_leading_zeroes(sig1, &op1->exponent)) != true) break;
+      if((retcode = bcd_sig_remove_leading_zeroes(sig2, &op2->exponent)) != true) break;
 
       /* We'll store the result here. */
-      significand_t result_hi = 0ll, result_lo = 0ll;
+      significand_t result_hi = { .s = { 0 } }, result_lo = { .s = { 0 } };
 
-      bool carry;
+      bool carry = false;
 
       int b_digit;
-      for(b_digit = 0; b_digit < BCD_MAX_DIGITS; b_digit++)
+      for(b_digit = BCD_NUM_DIGITS; b_digit > 0; b_digit--)
       {
         int a_digit;
-        for(a_digit = 0; a_digit < BCD_MAX_DIGITS; a_digit++)
+        for(a_digit = BCD_NUM_DIGITS; a_digit > 0; a_digit--)
         {
-          /* Get the 2 digits, and then multiply them.  This creates a hex
-           * result.  Convert the hex result into a base-10 result (res) and
-           * remainder (rem). */
-          uint8_t a_byte = (a >> (a_digit * 4)) & 0xF;
-          uint8_t b_byte = (b >> (b_digit * 4)) & 0xF;
+          /* 1. Get the 2 digits into a_byte and b_byte.
+           *
+           * 2. If either is zero, continue (zero time anything is zero).
+           *
+           * 3. Multiply them.  This creates a hex result (stored in prod).
+           *
+           * 4. Convert the hex result into a base-10 result (res_digit) and
+           *    remainder (rem_digit).
+           */
+          uint8_t a_byte = bcd_sig_get_byte(sig1, (a_digit - 1));
+          uint8_t b_byte = bcd_sig_get_byte(sig2, (b_digit - 1));
           if((a_byte == 0) || (b_byte == 0)) continue;
           uint8_t prod = a_byte * b_byte;
-          significand_t result = (prod / 10);
-          significand_t remain = (prod % 10);
+          uint8_t res_digit = (prod / 10);
+          uint8_t rem_digit = (prod % 10);
 
-          /* 1. Set remain_digit, result_digit, and carry_digit to the position
-           *    (relative to the right-hand edge of result_hi:result_lo) where
-           *    the result, remainder, and carry should be added into the total.
+          carry = (res_digit > 0) ? true : false;
+
+          /* 1. Set remain_digit and result_digit to the position (relative to
+           *    the left-hand edge of result_hi:result_lo) where the result and
+           *    remainder should be added into the total.
            * 
-           * 2. Set remain_sig, result_sig, and carry_sig to point to either
-           *    result_hi or result_lo, depending on where they fall in the
-           *    total result space.
+           * 2. Set remain_sig and result_sig to point to either result_hi or
+           *    result_lo, depending on where they fall in the result space.
            *
-           * 3. Adjust remain_digit, result_digit, and carry_digit to their
-           *    position (relative to either result_hi or result_lo).
+           * 3. Adjust remain_digit and result_digit to their position (relative
+           *    to either result_hi or result_lo).
            *
-           * 4. Shift the result and remain to their rightful position within
-           *    result_hi or result_lo.
+           * 4. Set result and remain to contain the actual result and remain
+           *    digits (positioned correctly).
            */
-          int remain_digit = b_digit + a_digit;
-          int result_digit = remain_digit + 1;
-          significand_t *remain_sig = (remain_digit < BCD_MAX_DIGITS) ? &result_lo : &result_hi;
-          significand_t *result_sig = (result_digit < BCD_MAX_DIGITS) ? &result_lo : &result_hi;
-          remain_digit %= BCD_MAX_DIGITS;
-          result_digit %= BCD_MAX_DIGITS;
-          remain <<= (remain_digit * 4);
-          result <<= (result_digit * 4);
+          int remain_digit = (b_digit + a_digit) - 1;
+          int result_digit = remain_digit - 1;
+          significand_t *remain_sig = (remain_digit < BCD_NUM_DIGITS) ? &result_hi : &result_lo;
+          significand_t *result_sig = (result_digit < BCD_NUM_DIGITS) ? &result_hi : &result_lo;
+          remain_digit %= BCD_NUM_DIGITS;
+          result_digit %= BCD_NUM_DIGITS;
+          significand_t remain;
+          significand_t result;
+          if((retcode = bcd_sig_initialize(&remain))                        != true) break;
+          if((retcode = bcd_sig_initialize(&result))                        != true) break;
+          if((retcode = bcd_sig_set_byte(&remain, remain_digit, rem_digit)) != true) break;
+          if((retcode = bcd_sig_set_byte(&result, result_digit, res_digit)) != true) break;
+
+          /* Create this, in case we need to do an overflow addition. */
+          significand_t overflo_val = { .s = { 0 } };
+          overflo_val.s[SIGNIFICAND_SECTIONS - 1] = 1;
 
           /* Now we're ready to add remain and result to the result_hi:result_lo total. */
           uint8_t overflow;
-          if((remain != 0) && (retcode = bcd_significand_add(*remain_sig, remain, remain_sig, &carry, &overflow)) != true) break;
-          if((overflow != 0) && (remain_sig == &result_lo))
+          bool tmp_carry = false;
+          if(rem_digit != 0)
           {
-            significand_t overflo_val = 1;
-            if((result != 0ll) && (retcode = bcd_significand_add(result_hi, overflo_val, &result_hi, NULL, &overflow)) != true) break;
+            if((retcode = bcd_significand_add(remain_sig, &remain, remain_sig, &tmp_carry, &overflow)) != true) break;
+            carry = (tmp_carry == true) ? true : carry;
+
+            if((overflow != 0) && (remain_sig == &result_lo))
+            {
+              if((retcode = bcd_significand_add(&result_hi, &overflo_val, &result_hi, &tmp_carry, &overflow)) != true) break;
+              carry = (tmp_carry == true) ? true : carry;
+            }
           }
-          if((result != 0ll) && (retcode = bcd_significand_add(*result_sig, result, result_sig, &carry, &overflow)) != true) break;
-          if((overflow != 0) && (result_sig == &result_lo))
+          if(res_digit != 0)
           {
-            significand_t overflo_val = 1;
-            if((result != 0ll) && (retcode = bcd_significand_add(result_hi, overflo_val, &result_hi, NULL, &overflow)) != true) break;
+            if((retcode = bcd_significand_add(result_sig, &result, result_sig, &tmp_carry, &overflow)) != true) break;
+            carry = (tmp_carry == true) ? true : carry;
+
+            if((overflow != 0) && (result_sig == &result_lo))
+            {
+              if((res_digit != 0) && (retcode = bcd_significand_add(&result_hi, &overflo_val, &result_hi, NULL, &overflow)) != true) break;
+            }
           }
-          DBG_PRINT("%s(): RES: %016llX:%016llX\n", __func__, result_hi, result_lo);
+
+          DBG_PRINT("%s(): RES: %s:%s %s %d\n", __func__, bcd_sig_to_str(&result_hi), bcd_sig_to_str(&result_lo), carry ? "true" : "false", overflow);
         }
       }
       if(retcode != true) break;
 
       /* Shift the result. */
       op1->significand = result_lo;
-      while(result_hi != 0ll)
+      while(bcd_sig_is_zero(&result_hi) == false)
       {
-        op1->significand >>= 4;
-        op1->significand |= (result_hi << ((BCD_MAX_DIGITS - 1) * 4));
-        result_hi >>= 4;
+        if((retcode = bcd_shift_significand(&op1->significand, 1)) != true) { break; }
+        uint8_t c = bcd_sig_get_byte(&result_hi, (BCD_NUM_DIGITS - 1));
+        if((retcode = bcd_shift_significand(&result_hi, 1))        != true) { break; }
+        if((retcode = bcd_sig_set_byte(&op1->significand, 0, c))   != true) { break; }
       }
 
       /* If the result is zero, then set the exponent to zero and leave. */
-      if(op1->significand == 0)
+      if(bcd_sig_is_zero(&op1->significand) == true)
       {
         op1->exponent = 0;
       }
@@ -768,55 +1321,63 @@ bcd_op_div(bcd *op1,
   {
     do
     {
-      significand_t dividend = op1->significand;
-      significand_t divisor  = op2->significand;
-      DBG_PRINT("%s() BEGIN: " SIGNIFICAND_FMT " / " SIGNIFICAND_FMT "\n", __func__, dividend, divisor);
+      DBG_PRINT("%s() BEGIN: %s / %s\n", __func__, bcd_sig_to_str(&op1->significand), bcd_sig_to_str(&op2->significand));
 
       /* Check for divide by zero. */
-      if(divisor == 0ll) break;
+      if(bcd_sig_is_zero(&op2->significand) == true) break;
 
-      op1->significand = 0ll;
+      significand_t op1_copy;
+      if(bcd_sig_copy(&op1->significand, &op1_copy) != true) break;
 
-      /* This mask will help us locate the significant divisor digits. */
-      significand_t mask = (0xFll << ((BCD_MAX_DIGITS - 1) * 4));
-      while((divisor & mask) != divisor)
+      significand_t *dividend = &op1_copy;
+      significand_t *divisor  = &op2->significand;
+
+      /* Initialize the result. */
+      if(bcd_sig_initialize(&op1->significand) != true) break;
+
+      /* Set mask so it marks the range of significant digits in the divisor. */
+      int i;
+      significand_t mask;
+      if(bcd_sig_initialize(&mask)       != true) break;
+      if(bcd_sig_set_byte(&mask, 0, 0xF) != true) break;
+      for(i = 0; (i < BCD_NUM_DIGITS) && (bcd_sig_cmp(divisor, &mask, divisor, 0) != 0); i++)
       {
-        mask >>= 4;
-        mask |= (0xFll << ((BCD_MAX_DIGITS - 1) * 4));
+        if(bcd_sig_set_byte(&mask, i, 0xF) != true) break;
       }
-      DBG_PRINT("%s() MASK: Divisor " SIGNIFICAND_FMT ": Mask " SIGNIFICAND_FMT "\n", __func__, divisor, mask);
+      DBG_PRINT("%s() MASK: Divisor %s: Mask %s\n", __func__, bcd_sig_to_str(divisor), bcd_sig_to_str(&mask));
 
-      /* This identifies the digit position (relative to 0 on the right) where
-       * we are currently calculating the quotient. */
-     significand_t quotient_one = (1ll << ((BCD_MAX_DIGITS - 1) * 4));
+      /* This identifies the digit position where we're currently calculating
+       * the quotient.  Each time we subtract the divisor from the dividend we
+       * will add 1 to the quotient. */
+     significand_t quotient_one;
+     if(bcd_sig_initialize(&quotient_one) != true)  break;
+     if(bcd_sig_set_byte(&quotient_one, 0, 1) != true) break;
 
       /* Loop here until we're done with the division. */
-      while((dividend != 0ll) && (divisor != 0ll))
+      while((bcd_sig_is_zero(dividend) == false) && (bcd_sig_is_zero(divisor) == false))
       {
         /* Calculate a quotient digit.  Keep subtracting and looping. */
-        while((divisor & mask) <= (dividend & mask))
+        while(bcd_sig_cmp(divisor, &mask, dividend, &mask) <= 0)
         {
-          op1->significand += quotient_one;
-
           uint8_t overflow;
           significand_t divisor_tens;
-          if((retcode = bcd_tens_complement(divisor, &divisor_tens)) == false) break;
-          if((retcode = bcd_significand_add(dividend, divisor_tens, &dividend, NULL, &overflow)) != true) break;
+          if(bcd_significand_add(&op1->significand, &quotient_one, &op1->significand, NULL, &overflow) == false) break;
+          if(bcd_tens_complement(divisor, &divisor_tens)                                               == false) break;
+          if(bcd_significand_add(dividend, &divisor_tens, dividend, NULL, &overflow)                   == false) break;
         }
 
-        divisor      >>= 4;
-        quotient_one >>= 4;
-        mask         >>= 4;
-        mask         |= (0xFll << ((BCD_MAX_DIGITS - 1) * 4));
+        if(bcd_shift_significand(divisor,       1) == false) break;
+        if(bcd_shift_significand(&quotient_one, 1) == false) break;
+        if(bcd_shift_significand(&mask,         1) == false) break;
+        if(bcd_sig_set_byte(&mask, 0, 0xF)         == false) break;
       }
-      DBG_PRINT("%s() RESULT: " SIGNIFICAND_FMT "\n", __func__, op1->significand);
+      DBG_PRINT("%s() RESULT: %s\n", __func__, bcd_sig_to_str(&op1->significand));
 
       /* Set the exponent, and then adjust to account for any leading zeroes. */
       op1->exponent -= op2->exponent;
-      mask = (0xFll << ((BCD_MAX_DIGITS - 1) * 4));
-      while((op1->significand != 0ll) && ((op1->significand & mask) == 0))
+      while((bcd_sig_is_zero(&op1->significand) == false) && ((bcd_sig_get_byte(&op1->significand, 0)) == 0))
       {
-        op1->significand <<= 4;
+        if(bcd_shift_significand(&op1->significand, -1) != true) break;
         op1->exponent--;
       }
 
@@ -880,14 +1441,21 @@ bcd_new(void)
   if(this != (bcd *) 0)
   {
     /* Start with zero (+0 * 10^0 = 0). */
-    this->significand       = 0;
-    this->exponent          = 0;
-    this->sign              = 0;
+    if(bcd_sig_initialize(&this->significand) == false)
+    {
+      bcd_delete(this);
+      this = (bcd *) 0;
+    }
+    else
+    {
+      this->exponent          = 0;
+      this->sign              = 0;
 
-    /* These only come into play if we start receiving characters via
-     * bcd_add_char(). */
-    this->got_decimal_point = false;
-    this->char_count        = 0;
+      /* These only come into play if we start receiving characters via
+       * bcd_add_char(). */
+      this->got_decimal_point = false;
+      this->char_count        = 0;
+    }
   }
 
   return this;
@@ -968,23 +1536,20 @@ bcd_add_char(bcd *this,
     c -= '0';
 
     /* If this is a leading (insignificant) zero, drop it. */
-    if((c == 0) && (this->got_decimal_point == false) && (this->significand == 0ll))
+    if((c == 0) && (this->got_decimal_point == false) && (bcd_sig_is_zero(&this->significand) == true))
     {
     }
 
     /* If the significand is already full, then silently drop the character. */
-    else if(this->char_count < BCD_MAX_DIGITS)
+    else if(this->char_count < BCD_NUM_DIGITS)
     {
-      if((this->got_decimal_point == false) && (this->significand != 0ll))
+      if((this->got_decimal_point == false) && (bcd_sig_is_zero(&this->significand) == false))
       {
         this->exponent++;
       }
 
-      this->char_count++;
-
-      int shift_count = ((BCD_MAX_DIGITS - this->char_count) * 4);
-      this->significand |= (((significand_t) c) << shift_count);
-      DBG_PRINT("%s(): 0x%016llX %d\n", __func__, this->significand, this->exponent);
+      bcd_sig_set_byte(&this->significand, this->char_count++, c);
+      DBG_PRINT("%s(): %s %d\n", __func__, bcd_sig_to_str(&this->significand), this->exponent);
     }
 
     retcode = true;
@@ -1018,30 +1583,34 @@ bcd_to_str(bcd  *this,
 
   if( (this != (bcd *) 0) && (buf != (char *) 0) && (buf_size > 0) )
   {
-    DBG_PRINT("%s(): 0x%016llX, %d, %d, %d.\n", __func__,
-              this->significand, this->exponent, this->got_decimal_point, this->sign);
+    DBG_PRINT("%s(): %s, %d, %d, %d.\n", __func__,
+              bcd_sig_to_str(&this->significand), this->exponent, this->got_decimal_point, this->sign);
 
+    /* We need a buffer that's big enough to hold the number, and the number
+     * has to fit within (sizeof(significand_t)) digits. */
+    int16_t max_exp = (BCD_NUM_DIGITS - 1);
+    int16_t min_exp = (0 - max_exp);
     int16_t exp = this->exponent;
-    if((exp > -16) && (exp < 16))
+    if((exp <= max_exp) && (exp >= min_exp))
     {
-      retcode = bcd_to_str_decimal(this->significand,
-                                   this->exponent,
-                                   this->char_count,
-                                   this->got_decimal_point,
-                                   this->sign,
-                                   buf,
-                                   buf_size);
+      retcode = bcd_to_str_decimal(&this->significand,
+                                    this->exponent,
+                                    this->char_count,
+                                    this->got_decimal_point,
+                                    this->sign,
+                                    buf,
+                                    buf_size);
     }
     /* Need to use scientific notation (1.234e18). */
     else
     {
-      retcode = bcd_to_str_decimal(this->significand,
-                                   0,
-                                   0,
-                                   false,
-                                   this->sign,
-                                   buf,
-                                   buf_size);
+      retcode = bcd_to_str_decimal(&this->significand,
+                                    0,
+                                    0,
+                                    false,
+                                    this->sign,
+                                    buf,
+                                    buf_size);
 
       /* Now add the exponent. */
       do
@@ -1078,11 +1647,86 @@ bcd_to_str(bcd  *this,
  *****************************************************************************/
 
 #ifdef TEST
+#define TEST_PRIMITIVES
+#define TEST_CHAR_INPUT
+#define TEST_MATH_OPERATIONS
+#define TEST_SPECIAL
+
 bool
 bcd_test(void)
 {
   bool retcode = false;
 
+  /***********************************************
+   * Test the primitives.
+   **********************************************/
+#ifdef TEST_PRIMITIVES
+  {
+    {
+      printf("  Sig-Sect Tests (SIGNIFICAND_DIGITS_PER_SECTION = %d).\n", SIGNIFICAND_DIGITS_PER_SECTION);
+      int j;
+      significand_section_t test_sect = { 0xFFFFFFFF };
+      for(j = 0; j < SIGNIFICAND_DIGITS_PER_SECTION; j++)
+      {
+        if(bcd_sect_set_byte(&test_sect, j, (j + 1)) != true)        return false;
+      }
+      if(test_sect != 0x12345678)                                    return false;
+      for(j = 0; j < SIGNIFICAND_DIGITS_PER_SECTION; j++)
+      {
+        if(bcd_sect_get_byte(test_sect, j) != (j + 1))               return false;
+      }
+      int arg2 = (SIGNIFICAND_DIGITS_PER_SECTION + 1);
+      if(bcd_sect_set_byte(&test_sect, arg2, 1) != false)            return false;
+      if(bcd_sect_get_byte(test_sect, arg2) != 0xF)                  return false;
+    }
+
+    {
+      printf("  Sig Tests.\n");
+      int j;
+      significand_t test_sig = { .s = { 0xFFFFFFFF } };
+      for(j = 0; j < BCD_NUM_DIGITS; j++)
+      {
+        if(bcd_sig_set_byte(&test_sig, j, (j + 1)) != true)          return false;
+      }
+      if(test_sig.s[0] != 0x12345678)                                return false;
+      if(test_sig.s[1] != 0x9ABCDEF0)                                return false;
+      for(j = 0; j < BCD_NUM_DIGITS; j++)
+      {
+        if(bcd_sig_get_byte(&test_sig, j) != ((j + 1) & 0xF))        return false;
+      }
+      int arg2 = (BCD_NUM_DIGITS + 1);
+      if(bcd_sig_set_byte(&test_sig, arg2, 1) != false)              return false;
+      if(bcd_sig_get_byte(&test_sig, arg2) != 0xF)                   return false;
+    }
+
+    {
+      printf("  Sig Manipulation Tests.\n");
+      significand_t sig1 = { .s = { 0x12345678, 0xFEDCBA98 } };
+      if((sig1.s[0] != 0x12345678) || (sig1.s[1] != 0xFEDCBA98))     return false;
+      if(bcd_shift_significand(&sig1, 3) != true)                    return false;
+      if((sig1.s[0] != 0x00012345) || (sig1.s[1] != 0x678FEDCB))     return false;
+      if(bcd_shift_significand(&sig1, -6) != true)                   return false;
+      if((sig1.s[0] != 0x45678FED) || (sig1.s[1] != 0xCB000000))     return false;
+      if(bcd_sig_is_zero(&sig1) != false)                            return false;
+      if(bcd_sig_initialize(&sig1) != true)                          return false;
+      if(bcd_sig_is_zero(&sig1) != true)                             return false;
+    }
+
+    {
+      printf("  Sig Copy and Compare.\n");
+      significand_t sig1 = { .s = { 0x12345678, 0xFEDCBA98 } };
+      significand_t sig2 = { .s = { 0xFEDABC78, 0xFE501234 } };
+      significand_t mask = { .s = { 0x000000FF, 0xFF000000 } };
+      if(bcd_sig_cmp(&sig1,     0, &sig2,     0) != -1)              return false;
+      if(bcd_sig_cmp(&sig1, &mask, &sig2, &mask) !=  0)              return false;
+      if(bcd_sig_copy(&sig1, &sig2) != true)                         return false;
+      if((sig1.s[0] != 0x12345678) || (sig1.s[1] != 0xFEDCBA98))     return false;
+      if(bcd_sig_cmp(&sig1, 0, &sig2, 0) != 0)                       return false;
+    }
+  }
+#endif // TEST_PRIMITIVES
+
+#ifdef TEST_CHAR_INPUT
   /* Loop through some decimal numbers.  This tests the basic functionality of
    * the bcd class.  We're checking to make sure it can handle any type of
    * decimal number that we might throw at it. */
@@ -1109,181 +1753,209 @@ bcd_test(void)
   };
   size_t bcd_test_size = (sizeof(tests) / sizeof(bcd_test));
 
-  int x;
-  for(x = 0; x < bcd_test_size; x++)
   {
-    bcd_test *t = &tests[x];
-    printf("  %s: '%s'.\n", t->name, t->src);
-
-    bcd *this = bcd_new();
-    if((retcode = (this != (bcd *) 0)) != true)                      return false;
-
-    const char *src = t->src;
-    while(*src)
+    int x;
+    for(x = 0; x < bcd_test_size; x++)
     {
-      if((retcode = bcd_add_char(this, *src++)) != true)             return false;
+      bcd_test *t = &tests[x];
+      printf("  %s: '%s'.\n", t->name, t->src);
+
+      bcd *this = bcd_new();
+      if((retcode = (this != (bcd *) 0)) != true)                      return false;
+
+      const char *src = t->src;
+      while(*src)
+      {
+        if((retcode = bcd_add_char(this, *src++)) != true)             return false;
+      }
+
+      char buf[1024];
+      memset(buf, 0, sizeof(buf));
+      if((retcode = bcd_to_str(this, buf, sizeof(buf))) != true)       return false;
+
+      DBG_PRINT("strcmp(%s, %s)\n", t->dst, buf);
+      if((retcode = (strcmp(t->dst, buf) == 0)) != true)               return false;
+
+      if((retcode = bcd_delete(this)) != true)                         return false;
+      this = (bcd *) 0;
     }
-
-    char buf[1024];
-    memset(buf, 0, sizeof(buf));
-    if((retcode = bcd_to_str(this, buf, sizeof(buf))) != true)       return false;
-
-    DBG_PRINT("strcmp(%s, %s)\n", t->dst, buf);
-    if((retcode = (strcmp(t->dst, buf) == 0)) != true)               return false;
-
-    if((retcode = bcd_delete(this)) != true)                         return false;
-    this = (bcd *) 0;
   }
+#endif // TEST_CHAR_INPUT
   
+#ifdef TEST_MATH_OPERATIONS
   /* Math operations. */
   typedef struct bcd_math_test {
     const char  *name;
+    bool (*func)(bcd *val1, bcd *val2);
     const char  *val1;
     const char  *val2;
-    bool (*func)(bcd *val1, bcd *val2);
     const char  *result;
   } bcd_math_test;
   bcd_math_test math_tests[] = {
-    { "BCD_ADD_01",                "1"                 ,                "2"                 , bcd_op_add,                "3"                     }, // Debug
-    { "BCD_ADD_02",         "99999999"                 ,                "1"                 , bcd_op_add,        "100000000"                     }, // 33-bits
-    { "BCD_ADD_03",        "999999999"                 ,                "1"                 , bcd_op_add,       "1000000000"                     }, // Carry.
-    { "BCD_ADD_04", "1234567890123456"                 , "9876543210987654"                 , bcd_op_add,                "1.111111110111111e+16" }, // 17 digits
-    { "BCD_ADD_05",                 ".1234567890123456", "9876543210987654"                 , bcd_op_add, "9876543210987654"                     }, // 16.0 + 0.16 digits.
-    { "BCD_ADD_06",             "1234s"                ,             "4321"                 , bcd_op_add,             "3087"                     }, // 1st num neg.
-    { "BCD_ADD_07",             "8766"                 ,             "4321"                 , bcd_op_add,            "13087"                     }, // Like previous, but pos.
-    { "BCD_ADD_08",              "123"                 ,             "1234"                 , bcd_op_add,             "1357"                     }, // Pos + Pos.
-    { "BCD_ADD_09",              "456s"                ,              "123"                 , bcd_op_add,             "-333"                     }, // Neg + Pos = Neg.
-    { "BCD_ADD_10",              "456s"                ,             "1234"                 , bcd_op_add,              "778"                     }, // Neg + Pos = Pos.
-    { "BCD_ADD_11",              "789"                 ,             "1234s"                , bcd_op_add,             "-445"                     }, // Pos + Neg = Neg.
-    { "BCD_ADD_12",              "789"                 ,              "123s"                , bcd_op_add,              "666"                     }, // Pos + Neg = Pos.
-    { "BCD_ADD_13",              "202s"                ,             "1234s"                , bcd_op_add,            "-1436"                     }, // Neg + Neg.
-    { "BCD_ADD_14",             "9990s"                ,             "1234s"                , bcd_op_add,           "-11224"                     }, // Neg with carry.
-    { "BCD_ADD_15",               "10.5"               ,                 ".5"               , bcd_op_add,               "11"                     }, // decimal to whole.
-    { "BCD_ADD_16",                 ".1111111111111111",                 ".1111111111111111", bcd_op_add,                "0.222222222222222"     }, // No carry, truncate.
-    { "BCD_ADD_17",             "1000"                 ,             "1000"                 , bcd_op_add,             "2000"                     }, // Trailing zeroes.
-    { "BCD_ADD_18",                 ".00001"           ,                 ".00001"           , bcd_op_add,                "0.00002"               }, // Significant zeroes.
-    { "BCD_ADD_19",                "1.0000134s"        ,                 ".045"             , bcd_op_add,               "-0.9550134"             },
+#if 1
+    { "BCD_ADD_01", bcd_op_add,                "1"                 ,                "2"                 ,                "3"                     }, // Debug
+    { "BCD_ADD_02", bcd_op_add,         "99999999"                 ,                "1"                 ,        "100000000"                     }, // 33-bits
+    { "BCD_ADD_03", bcd_op_add,        "999999999"                 ,                "1"                 ,       "1000000000"                     }, // Carry.
+    { "BCD_ADD_04", bcd_op_add, "1234567890123456"                 , "9876543210987654"                 ,                "1.111111110111111e+16" }, // 17 digits
+    { "BCD_ADD_05", bcd_op_add,                 ".1234567890123456", "9876543210987654"                 , "9876543210987654"                     }, // 16.0 + 0.16 digits.
+    { "BCD_ADD_06", bcd_op_add,             "1234s"                ,             "4321"                 ,             "3087"                     }, // 1st num neg.
+    { "BCD_ADD_07", bcd_op_add,             "8766"                 ,             "4321"                 ,            "13087"                     }, // Like previous, but pos.
+    { "BCD_ADD_08", bcd_op_add,              "123"                 ,             "1234"                 ,             "1357"                     }, // Pos + Pos.
+    { "BCD_ADD_09", bcd_op_add,              "456s"                ,              "123"                 ,             "-333"                     }, // Neg + Pos = Neg.
+    { "BCD_ADD_10", bcd_op_add,              "456s"                ,             "1234"                 ,              "778"                     }, // Neg + Pos = Pos.
+    { "BCD_ADD_11", bcd_op_add,              "789"                 ,             "1234s"                ,             "-445"                     }, // Pos + Neg = Neg.
+    { "BCD_ADD_12", bcd_op_add,              "789"                 ,              "123s"                ,              "666"                     }, // Pos + Neg = Pos.
+    { "BCD_ADD_13", bcd_op_add,              "202s"                ,             "1234s"                ,            "-1436"                     }, // Neg + Neg.
+    { "BCD_ADD_14", bcd_op_add,             "9990s"                ,             "1234s"                ,           "-11224"                     }, // Neg with carry.
+    { "BCD_ADD_15", bcd_op_add,               "10.5"               ,                 ".5"               ,               "11"                     }, // decimal to whole.
+    { "BCD_ADD_16", bcd_op_add,                 ".1111111111111111",                 ".1111111111111111",                "0.222222222222222"     }, // No carry, truncate.
+    { "BCD_ADD_17", bcd_op_add,             "1000"                 ,             "1000"                 ,             "2000"                     }, // Trailing zeroes.
+    { "BCD_ADD_18", bcd_op_add,                 ".00001"           ,                 ".00001"           ,                "0.00002"               }, // Significant zeroes.
+    { "BCD_ADD_19", bcd_op_add,                "1.0000134s"        ,                 ".045"             ,               "-0.9550134"             },
+    { "BCD_ADD_20", bcd_op_add, "9999999999999999"                 ,                "1"                 ,                "1e+16"                 }, // Overflow
+    { "BCD_ADD_21", bcd_op_add,         "99999999"                 ,                "1"                 ,        "100000000"                     }, // Carry up to next sect.
 
-    { "BCD_SUB_01",                "5"                 ,                "2"                 , bcd_op_sub,                "3"                     }, // Debug.
-    { "BCD_SUB_02",                "0"                 ,                "1"                 , bcd_op_sub,               "-1"                     }, // Neg num.
-    { "BCD_SUB_03",            "12345"                 ,             "1234"                 , bcd_op_sub,            "11111"                     }, // Pos - Pos = Pos.
-    { "BCD_SUB_04",            "54321"                 ,            "91234"                 , bcd_op_sub,           "-36913"                     }, // Pos - Pos = Neg.
-    { "BCD_SUB_05",            "12345"                 ,              "123.4s"              , bcd_op_sub,            "12468.4"                   }, // Pos - Neg = Pos.
-    { "BCD_SUB_06",              "432.1s"              ,                "7.5678"            , bcd_op_sub,             "-439.6678"                }, // Neg - Pos = Neg.
-    { "BCD_SUB_07",             "1225s"                ,               "34.95s"             , bcd_op_sub,            "-1190.05"                  }, // Neg - Neg = Neg.
-    { "BCD_SUB_08", "1111111111111111s"                , "1234567890123456s"                , bcd_op_sub,  "123456779012345"                     }, // Neg - Neg = Pos.
+    { "BCD_SUB_01", bcd_op_sub,                "5"                 ,                "2"                 ,                "3"                     }, // Debug.
+    { "BCD_SUB_02", bcd_op_sub,                "0"                 ,                "1"                 ,               "-1"                     }, // Neg num.
+    { "BCD_SUB_03", bcd_op_sub,            "12345"                 ,             "1234"                 ,            "11111"                     }, // Pos - Pos = Pos.
+    { "BCD_SUB_04", bcd_op_sub,            "54321"                 ,            "91234"                 ,           "-36913"                     }, // Pos - Pos = Neg.
+    { "BCD_SUB_05", bcd_op_sub,            "12345"                 ,              "123.4s"              ,            "12468.4"                   }, // Pos - Neg = Pos.
+    { "BCD_SUB_06", bcd_op_sub,              "432.1s"              ,                "7.5678"            ,             "-439.6678"                }, // Neg - Pos = Neg.
+    { "BCD_SUB_07", bcd_op_sub,             "1225s"                ,               "34.95s"             ,            "-1190.05"                  }, // Neg - Neg = Neg.
+    { "BCD_SUB_08", bcd_op_sub, "1111111111111111s"                , "1234567890123456s"                ,  "123456779012345"                     }, // Neg - Neg = Pos.
 
-    { "BCD_MUL_01",                "3"                 ,                "2"                 , bcd_op_mul,                "6"                     }, // Debug.
-    { "BCD_MUL_02",             "4567"                 ,            "56789"                 , bcd_op_mul,        "259355363"                     }, // Lots of carry.
-    { "BCD_MUL_03",                "1"                 ,                "0"                 , bcd_op_mul,                "0"                     }, // Non-0 * 0 = 0.
-    { "BCD_MUL_04",                "0"                 ,                "8"                 , bcd_op_mul,                "0"                     }, // 0 * Non-0 = 0.
-    { "BCD_MUL_05",            "87878"                 ,             "4539.123"             , bcd_op_mul,        "398889050.994"                 }, // Pos * Pos = Pos.
-    { "BCD_MUL_06",            "13579.2468"            ,                 ".8579s"           , bcd_op_mul,           "-11649.63582972"            }, // Pos * Neg = Neg.
-    { "BCD_MUL_07",                "1.0000134s"        ,                 ".045"             , bcd_op_mul,               "-0.045000603"           }, // Neg * Pos = Neg.
-    { "BCD_MUL_08",       "5579421358s"                ,               "42s"                , bcd_op_mul,     "234335697036"                     }, // Neg * Neg = Pos.
-    { "BCD_MUL_09",               "13.57900000"        ,             "8700.0000"            , bcd_op_mul,          "118137.3"                    }, // Insignificant zeroes.
-    { "BCD_MUL_10", "9999999999999999"                 ,                "9"                 , bcd_op_mul,                "8.999999999999999e+16" }, // Very large numbers. 
-    { "BCD_MUL_11", "9999999999999999"                 ,               "99"                 , bcd_op_mul,                "9.899999999999999e+17" },
-    { "BCD_MUL_12", "9999999999999999"                 ,              "999"                 , bcd_op_mul,                "9.989999999999999e+18" },
-    { "BCD_MUL_13", "9999999999999999"                 ,             "9999"                 , bcd_op_mul,                "9.998999999999999e+19" },
-    { "BCD_MUL_14", "9999999999999999"                 ,            "99999"                 , bcd_op_mul,                "9.999899999999999e+20" },
-    { "BCD_MUL_15", "9999999999999999"                 ,           "999999"                 , bcd_op_mul,                "9.999989999999999e+21" },
-    { "BCD_MUL_16", "9999999999999999"                 ,          "9999999"                 , bcd_op_mul,                "9.999998999999999e+22" },
-    { "BCD_MUL_17", "9999999999999999"                 ,         "99999999"                 , bcd_op_mul,                "9.999999899999999e+23" },
-    { "BCD_MUL_18", "9999999999999999"                 ,        "999999999"                 , bcd_op_mul,                "9.999999989999999e+24" },
-    { "BCD_MUL_19", "9999999999999999"                 ,       "9999999999"                 , bcd_op_mul,                "9.999999998999999e+25" },
-    { "BCD_MUL_20", "9999999999999999"                 ,      "99999999999"                 , bcd_op_mul,                "9.999999999899999e+26" },
-    { "BCD_MUL_21", "9999999999999999"                 ,     "999999999999"                 , bcd_op_mul,                "9.999999999989999e+27" },
-    { "BCD_MUL_22", "9999999999999999"                 ,    "9999999999999"                 , bcd_op_mul,                "9.999999999998999e+28" },
-    { "BCD_MUL_23", "9999999999999999"                 ,   "99999999999999"                 , bcd_op_mul,                "9.999999999999899e+29" },
-    { "BCD_MUL_24", "9999999999999999"                 ,  "999999999999999"                 , bcd_op_mul,                "9.999999999999989e+30" },
-    { "BCD_MUL_25", "9999999999999999"                 , "9999999999999999"                 , bcd_op_mul,                "9.999999999999998e+31" },
-    { "BCD_MUL_26",                 ".000000000000001" ,                 ".000000000000001" , bcd_op_mul,                "1e-30"                 }, // Very small numbers.
-    { "BCD_MUL_27",                 ".5"               ,                 ".2"               , bcd_op_mul,                "0.1"                   }, // Insig zeroes in result.
-    { "BCD_MUL_28",               "75"                 ,               "28.2"               , bcd_op_mul,             "2115"                     }, // Whole * Fract = Whole.
-    { "BCD_MUL_29",              "428.225"             ,              "311"                 , bcd_op_mul,           "133177.975"                 }, // Whole * Fract = Fract.
-    { "BCD_MUL_30",            "30000"                 ,              "200"                 , bcd_op_mul,          "6000000"                     }, // Many trailing zeroes.
+    { "BCD_MUL_01", bcd_op_mul,                "3"                 ,                "2"                 ,                "6"                     }, // Debug.
+    { "BCD_MUL_02", bcd_op_mul,             "4567"                 ,            "56789"                 ,        "259355363"                     }, // Lots of carry.
+    { "BCD_MUL_03", bcd_op_mul,                "1"                 ,                "0"                 ,                "0"                     }, // Non-0 * 0 = 0.
+    { "BCD_MUL_04", bcd_op_mul,                "0"                 ,                "8"                 ,                "0"                     }, // 0 * Non-0 = 0.
+    { "BCD_MUL_05", bcd_op_mul,            "87878"                 ,             "4539.123"             ,        "398889050.994"                 }, // Pos * Pos = Pos.
+    { "BCD_MUL_06", bcd_op_mul,            "13579.2468"            ,                 ".8579s"           ,           "-11649.63582972"            }, // Pos * Neg = Neg.
+    { "BCD_MUL_07", bcd_op_mul,                "1.0000134s"        ,                 ".045"             ,               "-0.045000603"           }, // Neg * Pos = Neg.
+    { "BCD_MUL_08", bcd_op_mul,       "5579421358s"                ,               "42s"                ,     "234335697036"                     }, // Neg * Neg = Pos.
+    { "BCD_MUL_09", bcd_op_mul,               "13.57900000"        ,             "8700.0000"            ,          "118137.3"                    }, // Insignificant zeroes.
+    { "BCD_MUL_10", bcd_op_mul, "9999999999999999"                 ,                "9"                 ,                "8.999999999999999e+16" }, // Very large numbers. 
+    { "BCD_MUL_11", bcd_op_mul, "9999999999999999"                 ,               "99"                 ,                "9.899999999999999e+17" },
+    { "BCD_MUL_12", bcd_op_mul, "9999999999999999"                 ,              "999"                 ,                "9.989999999999999e+18" },
+    { "BCD_MUL_13", bcd_op_mul, "9999999999999999"                 ,             "9999"                 ,                "9.998999999999999e+19" },
+    { "BCD_MUL_14", bcd_op_mul, "9999999999999999"                 ,            "99999"                 ,                "9.999899999999999e+20" },
+    { "BCD_MUL_15", bcd_op_mul, "9999999999999999"                 ,           "999999"                 ,                "9.999989999999999e+21" },
+    { "BCD_MUL_16", bcd_op_mul, "9999999999999999"                 ,          "9999999"                 ,                "9.999998999999999e+22" },
+    { "BCD_MUL_17", bcd_op_mul, "9999999999999999"                 ,         "99999999"                 ,                "9.999999899999999e+23" },
+    { "BCD_MUL_18", bcd_op_mul, "9999999999999999"                 ,        "999999999"                 ,                "9.999999989999999e+24" },
+    { "BCD_MUL_19", bcd_op_mul, "9999999999999999"                 ,       "9999999999"                 ,                "9.999999998999999e+25" },
+    { "BCD_MUL_20", bcd_op_mul, "9999999999999999"                 ,      "99999999999"                 ,                "9.999999999899999e+26" },
+    { "BCD_MUL_21", bcd_op_mul, "9999999999999999"                 ,     "999999999999"                 ,                "9.999999999989999e+27" },
+    { "BCD_MUL_22", bcd_op_mul, "9999999999999999"                 ,    "9999999999999"                 ,                "9.999999999998999e+28" },
+    { "BCD_MUL_23", bcd_op_mul, "9999999999999999"                 ,   "99999999999999"                 ,                "9.999999999999899e+29" },
+    { "BCD_MUL_24", bcd_op_mul, "9999999999999999"                 ,  "999999999999999"                 ,                "9.999999999999989e+30" },
+    { "BCD_MUL_25", bcd_op_mul, "9999999999999999"                 , "9999999999999999"                 ,                "9.999999999999998e+31" },
+    { "BCD_MUL_26", bcd_op_mul,                 ".000000000000001" ,                 ".000000000000001" ,                "1e-30"                 }, // Very small numbers.
+    { "BCD_MUL_27", bcd_op_mul,                 ".5"               ,                 ".2"               ,                "0.1"                   }, // Insig zeroes in result.
+    { "BCD_MUL_28", bcd_op_mul,               "75"                 ,               "28.2"               ,             "2115"                     }, // Whole * Fract = Whole.
+    { "BCD_MUL_29", bcd_op_mul,              "428.225"             ,              "311"                 ,           "133177.975"                 }, // Whole * Fract = Fract.
+    { "BCD_MUL_30", bcd_op_mul,            "30000"                 ,              "200"                 ,          "6000000"                     }, // Many trailing zeroes.
+    { "BCD_MUL_31", bcd_op_mul,                 ".009"             ,                 ".009"             ,                "0.000081"              }, // Irrelevent carry.
+    { "BCD_MUL_32", bcd_op_mul,                "9"                 ,                "9"                 ,               "81"                     }, // Irrelevent carry.
 
-    { "BCD_DIV_01",                "6"                 ,                "2"                 , bcd_op_div,                "3"                     }, // Simple div.
-    { "BCD_DIV_02",              "246"                 ,                "3"                 , bcd_op_div,               "82"                     }, // Slightly fancier.
-    { "BCD_DIV_03", "1234567890123456"                 ,               "32"                 , bcd_op_div,   "38580246566358"                     }, // Slightly fancier.
-    { "BCD_DIV_04",             "7890"                 ,             "3210"                 , bcd_op_div,                "2.457943925233645"     }, // Pos / Pos
-    { "BCD_DIV_05",             "1234"                 ,               "32s"                , bcd_op_div,              "-38.5625"                }, // Pos / Neg
-    { "BCD_DIV_06",            "97531s"                ,              "132"                 , bcd_op_div,             "-738.8712121212121"       }, // Neg / Pos
-    { "BCD_DIV_07",       "2468013579s"                ,               "32s"                , bcd_op_div,         "77125424.34375"               }, // Neg / Neg
-    { "BCD_DIV_08", "9999999999999999"                 ,                 ".00234"           , bcd_op_div,                "4.273504273504273e+18" }, // Whole / <1
-    { "BCD_DIV_09",                 ".45832"           ,               "32s"                , bcd_op_div,               "-0.0199269565217391"    }, // <1 / Whole
-    { "BCD_DIV_10", "9999999999999999"                 ,                 ".000000000000001" , bcd_op_div,                "9.999999999999999e+30" }, // Lrg / Sml
-    { "BCD_DIV_11",                 ".000000000000001" , "9999999999999999"                 , bcd_op_div,                "1.e-31"                }, // Sml / Lrg
-    { "BCD_DIV_12",      "8745963210"                  ,              "101"                 , bcd_op_div,         "86593694.14851485"            }, //
-    { "BCD_DIV_13",              "22"                  ,                "7"                 , bcd_op_div,                "3.142857142857143"     }, // Pi
-    { "BCD_DIV_14",               "2"                  ,                "1.414213562373095" , bcd_op_div,                "1.414213562373095"     }, // Square root of 2.
-    { "BCD_DIV_15", "9999999999999999"                 , "7777777777777777"                 , bcd_op_div,                "1.285714285714286"     }, // 16 / 16 = 16 digits.
+#endif
+    { "BCD_DIV_01", bcd_op_div,                "6"                 ,                "2"                 ,                "3"                     }, // Simple div.
+    { "BCD_DIV_02", bcd_op_div,              "246"                 ,                "3"                 ,               "82"                     }, // Slightly fancier.
+    { "BCD_DIV_03", bcd_op_div, "1234567890123456"                 ,               "32"                 ,   "38580246566358"                     }, // Slightly fancier.
+    { "BCD_DIV_04", bcd_op_div,             "7890"                 ,             "3210"                 ,                "2.457943925233645"     }, // Pos / Pos
+    { "BCD_DIV_05", bcd_op_div,             "1234"                 ,               "32s"                ,              "-38.5625"                }, // Pos / Neg
+    { "BCD_DIV_06", bcd_op_div,            "97531s"                ,              "132"                 ,             "-738.8712121212121"       }, // Neg / Pos
+    { "BCD_DIV_07", bcd_op_div,       "2468013579s"                ,               "32s"                ,         "77125424.34375"               }, // Neg / Neg
+    { "BCD_DIV_08", bcd_op_div, "9999999999999999"                 ,                 ".00234"           ,                "4.273504273504273e+18" }, // Whole / <1
+    { "BCD_DIV_09", bcd_op_div,                 ".45832"           ,               "32s"                ,               "-0.0199269565217391"    }, // <1 / Whole
+    { "BCD_DIV_10", bcd_op_div, "9999999999999999"                 ,                 ".000000000000001" ,                "9.999999999999999e+30" }, // Lrg / Sml
+    { "BCD_DIV_11", bcd_op_div,                 ".000000000000001" , "9999999999999999"                 ,                "1.e-31"                }, // Sml / Lrg
+    { "BCD_DIV_12", bcd_op_div,      "8745963210"                  ,              "101"                 ,         "86593694.14851485"            }, //
+    { "BCD_DIV_13", bcd_op_div,              "22"                  ,                "7"                 ,                "3.142857142857143"     }, // Pi
+    { "BCD_DIV_14", bcd_op_div,               "2"                  ,                "1.414213562373095" ,                "1.414213562373095"     }, // Square root of 2.
+    { "BCD_DIV_15", bcd_op_div, "9999999999999999"                 , "7777777777777777"                 ,                "1.285714285714286"     }, // 16 / 16 = 16 digits.
   };
   size_t bcd_math_test_size = (sizeof(math_tests) / sizeof(bcd_math_test));
 
-  for(x = 0; x < bcd_math_test_size; x++)
   {
-    bcd_math_test *t = &math_tests[x];
-    const char *val1 = t->val1;
-    const char *val2 = t->val2;
-    printf("  %s: %s %s\n", t->name, val1, val2);
-
-    bcd *obj1 = bcd_new();
-    if((retcode = (obj1 != (bcd *) 0)) != true)                      return false;
-    while(*val1)
+    int x;
+    for(x = 0; x < bcd_math_test_size; x++)
     {
-      if((retcode = bcd_add_char(obj1, *val1++)) != true)            return false;
-    }
+      bcd_math_test *t = &math_tests[x];
+      const char *val1 = t->val1;
+      const char *val2 = t->val2;
+      printf("  %s: %s %s\n", t->name, val1, val2);
 
-    bcd *obj2 = bcd_new();
-    if((retcode = (obj2 != (bcd *) 0)) != true)                      return false;
-    while(*val2)
-    {
-      if((retcode = bcd_add_char(obj2, *val2++)) != true)            return false;
-    }
+      bcd *obj1 = bcd_new();
+      if((retcode = (obj1 != (bcd *) 0)) != true)                      return false;
+      while(*val1)
+      {
+        if((retcode = bcd_add_char(obj1, *val1++)) != true)            return false;
+      }
 
-    if((retcode = t->func(obj1, obj2)) != true)                      return false;
+      bcd *obj2 = bcd_new();
+      if((retcode = (obj2 != (bcd *) 0)) != true)                      return false;
+      while(*val2)
+      {
+        if((retcode = bcd_add_char(obj2, *val2++)) != true)            return false;
+      }
+
+      if((retcode = t->func(obj1, obj2)) != true)                      return false;
     
-    char buf[1024];
-    memset(buf, 0, sizeof(buf));
-    if((retcode = bcd_to_str(obj1, buf, sizeof(buf))) != true)       return false;
+      char buf[1024];
+      memset(buf, 0, sizeof(buf));
+      if((retcode = bcd_to_str(obj1, buf, sizeof(buf))) != true)       return false;
 
-    if((retcode = (strcmp(t->result, buf) == 0)) != true)
-    {
-      printf("  %s: strcmp(%s, %s)\n", t->name, t->result, buf);
-      return false;
+      if((retcode = (strcmp(t->result, buf) == 0)) != true)
+      {
+        printf("  %s: strcmp(%s, %s)\n", t->name, t->result, buf);
+        return false;
+      }
+
+      if((retcode = bcd_delete(obj1)) != true)                         return false;
+      if((retcode = bcd_delete(obj2)) != true)                         return false;
     }
-
-    if((retcode = bcd_delete(obj1)) != true)                         return false;
-    if((retcode = bcd_delete(obj2)) != true)                         return false;
   }
+#endif // TEST_MATH_OPERATIONS
 
-  /* Specialty tests.  We're not fiddling around with creating a bunch of nifty
-   * little objects.  We're building them manually and firing off the tests. */
-  char buf[1024];
+#ifdef TEST_SPECIAL
+  {
+    /* Specialty tests.  We're not fiddling around with creating a bunch of nifty
+     * little objects.  We're building them manually and firing off the tests. */
+    char buf[1024];
 
-  printf("Divide by zero test.\n");
-  bcd *o1 = bcd_new(), *o2 = bcd_new();
-  o1->significand = 0x01; o1->exponent = 1; o1->got_decimal_point = 0; o1->sign = 0;
-  o2->significand = 0x00; o2->exponent = 1; o2->got_decimal_point = 0; o2->sign = 0;
-  if(bcd_op_div(o1, o2) != false)                                    return false;
+    printf("Divide by zero test.\n");
+    bcd *o1 = bcd_new(), *o2 = bcd_new();
+    if(bcd_sig_initialize(&o1->significand) != true)                   return false;
+    if(bcd_sig_initialize(&o2->significand) != true)                   return false;
+    if(bcd_sig_set_byte(&o1->significand, BCD_NUM_DIGITS, 1) != true)  return false;
+    o1->exponent = 1; o1->got_decimal_point = 0; o1->sign = 0;
+    o2->exponent = 1; o2->got_decimal_point = 0; o2->sign = 0;
+    if(bcd_op_div(o1, o2) != false)                                    return false;
 
-  printf("Mul very large and very small numbers.\n");
-  o1->significand = 0x9999999999999999ll; o1->exponent = 15; o1->got_decimal_point = 0; o1->sign = 0;
-  o2->significand = 0x0000000000000001ll; o2->exponent =  2; o2->got_decimal_point = 0; o2->sign = 0;
-  if(bcd_op_mul(o1, o2) != true)                                     return false;
-  memset(buf, 0, sizeof(buf));
-  if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)           return false;
-  if((retcode = (strcmp("9.999999999999999e17", buf) == 0)) != true) return false;
+    printf("Mul very large and very small numbers.\n");
+    int x;
+    for(x = 0; x < BCD_NUM_DIGITS; x++) 
+    {
+      if(bcd_sig_set_byte(&o1->significand, x, 9) != true)             return false;
+    }
+    if(bcd_sig_set_byte(&o2->significand, BCD_NUM_DIGITS, 1) != true)  return false;
+    o1->exponent = 15; o1->got_decimal_point = 0; o1->sign = 0;
+    o2->exponent =  2; o2->got_decimal_point = 0; o2->sign = 0;
+    if(bcd_op_mul(o1, o2) != true)                                     return false;
+    memset(buf, 0, sizeof(buf));
+    if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)           return false;
+    if((retcode = (strcmp("9.999999999999999e17", buf) == 0)) != true) return false;
 
-  printf("Now add a very small number.\n");
-  o2->significand = 0x0000000000000001ll; o2->exponent =  1; o2->got_decimal_point = 0; o2->sign = 0;
-  if(bcd_op_add(o1, o2) != true)                                     return false;
-  memset(buf, 0, sizeof(buf));
-  if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)           return false;
-  if((retcode = (strcmp("9.999999999999999e17", buf) == 0)) != true) return false;
-  bcd_delete(o1); bcd_delete(o2);
+    printf("Now add a very small number.\n");
+    if(bcd_sig_set_byte(&o2->significand, BCD_NUM_DIGITS, 1) != true)  return false;
+    o2->exponent =  1; o2->got_decimal_point = 0; o2->sign = 0;
+    if(bcd_op_add(o1, o2) != true)                                     return false;
+    memset(buf, 0, sizeof(buf));
+    if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)           return false;
+    if((retcode = (strcmp("9.999999999999999e17", buf) == 0)) != true) return false;
+    bcd_delete(o1); bcd_delete(o2);
+  }
+#endif // TEST_SPECIAL
 
   return retcode;
 }
