@@ -26,7 +26,7 @@ bool bcd_delete(bcd *this);
 
 bool bcd_add_char(bcd *this, char c);
 
-bool bcd_to_str(bcd  *this, char  *buf, size_t buf_size);
+bool bcd_to_str(bcd *this, char *buf, size_t buf_size);
 
 /********************************** TEST API **********************************/
 

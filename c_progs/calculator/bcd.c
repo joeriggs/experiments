@@ -1303,9 +1303,9 @@ bcd_op_mul(bcd *op1,
 /* This is the BCD division function.
  *
  * Input:
- *   op1  = A pointer to the first operand.  The result is returned in this one.
+ *   op1  = A pointer to the dividend.  The result is returned in this one.
  *
- *   op2  = The other operand.  Division is BINARY.
+ *   op2  = A pointer to the divisor.
  *
  * Output:
  *   true  = success.  op1 contains the quotient.
@@ -1326,63 +1326,137 @@ bcd_op_div(bcd *op1,
       /* Check for divide by zero. */
       if(bcd_sig_is_zero(&op2->significand) == true) break;
 
-      significand_t op1_copy;
-      if(bcd_sig_copy(&op1->significand, &op1_copy) != true) break;
+      /* Delete leading zeroes from the divisor.  Adjust the exponent too.  We
+       * only need to do this if we're dealing with a user-supplied number.
+       * All other numbers won't have leading zeroes. */
+      if((retcode = bcd_sig_remove_leading_zeroes(&op2->significand, &op2->exponent)) != true) break;
 
-      significand_t *dividend = &op1_copy;
-      significand_t *divisor  = &op2->significand;
+      /* We need to work in large data so we have room to calculate a fullsize
+       * quotient.  This allows for rounding at the end of the quotient. */
+      significand_t dividend_hi, dividend_lo;
+      significand_t  divisor_hi,  divisor_lo;
+      significand_t   result_hi,   result_lo;
+      significand_t     mask_hi,     mask_lo;
+      significand_t  add_one_hi,  add_one_lo;
+      if(bcd_sig_initialize(&dividend_hi) != true) break;
+      if(bcd_sig_initialize(&dividend_lo) != true) break;
+      if(bcd_sig_initialize( &divisor_hi) != true) break;
+      if(bcd_sig_initialize( &divisor_lo) != true) break;
+      if(bcd_sig_initialize(  &result_hi) != true) break;
+      if(bcd_sig_initialize(  &result_lo) != true) break;
+      if(bcd_sig_initialize(    &mask_hi) != true) break;
+      if(bcd_sig_initialize(    &mask_lo) != true) break;
+      if(bcd_sig_initialize(& add_one_hi) != true)  break;
+      if(bcd_sig_initialize(& add_one_lo) != true)  break;
 
-      /* Initialize the result. */
-      if(bcd_sig_initialize(&op1->significand) != true) break;
+      if(bcd_sig_copy(&op1->significand, &dividend_hi) != true) break;
+      if(bcd_sig_copy(&op2->significand,  &divisor_hi) != true) break;
 
-      /* Set mask so it marks the range of significant digits in the divisor. */
-      int i;
-      significand_t mask;
-      if(bcd_sig_initialize(&mask)       != true) break;
-      if(bcd_sig_set_byte(&mask, 0, 0xF) != true) break;
-      for(i = 0; (i < BCD_NUM_DIGITS) && (bcd_sig_cmp(divisor, &mask, divisor, 0) != 0); i++)
+      /* Set mask_hi to mark the range of significant digits in the divisor. */
       {
-        if(bcd_sig_set_byte(&mask, i, 0xF) != true) break;
+        int i;
+        if(bcd_sig_set_byte(&mask_hi, 0, 0xF) != true) break;
+        for(i = 0; (i < BCD_NUM_DIGITS) && (bcd_sig_cmp(&divisor_hi, &mask_hi, &divisor_hi, 0) != 0); i++)
+        {
+          if(bcd_sig_set_byte(&mask_hi, i, 0xF) != true) break;
+        }
+        DBG_PRINT("%s() MASK: Divisor %s: Mask %s\n", __func__, bcd_sig_to_str(&divisor_hi), bcd_sig_to_str(&mask_hi));
       }
-      DBG_PRINT("%s() MASK: Divisor %s: Mask %s\n", __func__, bcd_sig_to_str(divisor), bcd_sig_to_str(&mask));
 
       /* This identifies the digit position where we're currently calculating
        * the quotient.  Each time we subtract the divisor from the dividend we
        * will add 1 to the quotient. */
-     significand_t quotient_one;
-     if(bcd_sig_initialize(&quotient_one) != true)  break;
-     if(bcd_sig_set_byte(&quotient_one, 0, 1) != true) break;
+      if(bcd_sig_set_byte(&add_one_hi, 0, 1) != true) break;
 
-      /* Loop here until we're done with the division. */
-      while((bcd_sig_is_zero(dividend) == false) && (bcd_sig_is_zero(divisor) == false))
+      /* Loop here until we're done with the division.  We go until we have as
+       * much of 2 full significands as possible.  This should give us at least
+       * one extra digit (to allow for rounding).  Then we're done. */
+      bool done = false;
+      while(done == false)
       {
         /* Calculate a quotient digit.  Keep subtracting and looping. */
-        while(bcd_sig_cmp(divisor, &mask, dividend, &mask) <= 0)
+        while( ((bcd_sig_is_zero(&dividend_hi) == false) && (bcd_sig_cmp(&divisor_hi, &mask_hi, &dividend_hi, &mask_hi) <= 0)) ||
+              ((bcd_sig_cmp(&divisor_hi, &mask_hi, &dividend_hi, &mask_hi) == 0) && (bcd_sig_cmp(&divisor_lo, &mask_lo, &dividend_lo, &mask_lo) <= 0)) )
         {
           uint8_t overflow;
-          significand_t divisor_tens;
-          if(bcd_significand_add(&op1->significand, &quotient_one, &op1->significand, NULL, &overflow) == false) break;
-          if(bcd_tens_complement(divisor, &divisor_tens)                                               == false) break;
-          if(bcd_significand_add(dividend, &divisor_tens, dividend, NULL, &overflow)                   == false) break;
+          significand_t value_tens;
+
+          significand_t *res = (bcd_sig_is_zero(&divisor_hi) == false) ? &result_hi  : &result_lo;
+          significand_t *one = (bcd_sig_is_zero(&divisor_hi) == false) ? &add_one_hi : &add_one_lo;
+          if(bcd_significand_add(res, one, res, NULL, &overflow) == false) break;
+
+          bool borrow = (bcd_sig_cmp(&dividend_lo, 0, &divisor_lo, 0) < 0) ? true : false;
+          if(bcd_tens_complement(&divisor_lo, &value_tens)                                               == false) break;
+          if(bcd_significand_add(&dividend_lo, &value_tens, &dividend_lo, NULL, &overflow)                   == false) break;
+
+          if(borrow == true)
+          {
+            significand_t one;
+            if(bcd_sig_initialize(&one) != true)  break;
+            if(bcd_sig_set_byte(&one, (BCD_NUM_DIGITS - 1), 0x1) != true) break;
+            if(bcd_tens_complement(&one, &value_tens)                                             == false) break;
+            if(bcd_significand_add(&dividend_hi, &value_tens, &dividend_hi, NULL, &overflow)                 == false) break;
+          }
+
+          if(bcd_tens_complement(&divisor_hi, &value_tens)                                               == false) break;
+          if(bcd_significand_add(&dividend_hi, &value_tens, &dividend_hi, NULL, &overflow)                   == false) break;
         }
 
-        if(bcd_shift_significand(divisor,       1) == false) break;
-        if(bcd_shift_significand(&quotient_one, 1) == false) break;
-        if(bcd_shift_significand(&mask,         1) == false) break;
-        if(bcd_sig_set_byte(&mask, 0, 0xF)         == false) break;
+        uint8_t c;
+        if((c = bcd_sig_get_byte(&divisor_hi, (BCD_NUM_DIGITS - 1))) == 0xF) break;
+        if(bcd_shift_significand(&divisor_hi,       1) == false) break;
+        if(bcd_shift_significand(&divisor_lo,       1) == false) break;
+        if(bcd_sig_set_byte(&divisor_lo, 0, c) == false) break;
+
+        if((c = bcd_sig_get_byte(&add_one_hi, (BCD_NUM_DIGITS - 1))) == 0xF) break;
+        if(bcd_shift_significand(&add_one_hi, 1) == false) break;
+        if(bcd_shift_significand(&add_one_lo, 1) == false) break;
+        if(bcd_sig_set_byte(&add_one_lo, 0, c) == false) break;
+
+        c = bcd_sig_get_byte(&mask_hi, (BCD_NUM_DIGITS - 1));
+        if(bcd_shift_significand(&mask_hi, 1) == false) break;
+        if(bcd_sig_set_byte(&mask_hi, 0, 0xF) == false) break;
+        if(bcd_sig_get_byte(&mask_lo, (BCD_NUM_DIGITS - 1)) == 0xF) { done = true; }
+        if(bcd_shift_significand(&mask_lo, 1) == false) break;
+        if(bcd_sig_set_byte(&mask_lo, 0, c) == false) break;
       }
-      DBG_PRINT("%s() RESULT: %s\n", __func__, bcd_sig_to_str(&op1->significand));
+      DBG_PRINT("%s() RESULT: %s:%s\n", __func__, bcd_sig_to_str(&result_hi), bcd_sig_to_str(&result_lo));
+
+      /* Copy the result to op1 so we can return it to the caller. */
+      if(bcd_sig_copy(&result_hi, &op1->significand) == false) break;
 
       /* Set the exponent, and then adjust to account for any leading zeroes. */
-      op1->exponent -= op2->exponent;
-      while((bcd_sig_is_zero(&op1->significand) == false) && ((bcd_sig_get_byte(&op1->significand, 0)) == 0))
       {
-        if(bcd_shift_significand(&op1->significand, -1) != true) break;
-        op1->exponent--;
+        bool shift_ok = true;
+        op1->exponent -= op2->exponent;
+        while((bcd_sig_is_zero(&op1->significand) == false) && ((bcd_sig_get_byte(&op1->significand, 0)) == 0))
+        {
+          char c;
+          if(bcd_shift_significand(&op1->significand, -1) != true)                  { shift_ok = false; break; }
+          if((c = bcd_sig_get_byte(&result_lo, 0)) == 0xF)                          { shift_ok = false; break; }
+          if(bcd_sig_set_byte(&op1->significand, (BCD_NUM_DIGITS - 1), c) == false) { shift_ok = false; break; }
+          if(bcd_shift_significand(&result_lo, -1) != true)                         { shift_ok = false; break; }
+          op1->exponent--;
+        }
+        if(shift_ok == false) break;
       }
 
       /* Set the sign. */
       op1->sign = (op1->sign == op2->sign) ? false : true;
+
+      /* Now we need to round the result (if necessary).  We'll use the regular
+       * bcd_op_add() function to do that step. */
+      char c;
+      if((c = bcd_sig_get_byte(&result_lo, 0)) == 0xF) break;
+      if(c > 4)
+      {
+        bcd *round;
+        if((round = bcd_new()) == (bcd *) NULL) break;
+        if(bcd_sig_set_byte(&round->significand, (BCD_NUM_DIGITS - 1), 1) == false) break;
+        round->sign = op1->sign;
+        round->exponent = op1->exponent;
+        if(bcd_op_add(op1, round) == false) break;
+      }
 
       /* Done.  Set the object to reflect the fact that we calculated the value.
        * This is no longer data that came in through bcd_add_char(). */
@@ -1512,10 +1586,11 @@ bcd_add_char(bcd *this,
    * already got a decimal point, then this one is silently dropped. */
   if(c == '.')
   {
-    /* If this is the first significant character, reserve a leading zero. */
+    /* If this is the first significant character, drop the exponent so we can
+     * handle BCD_NUM_DIGITS digits. */
     if(this->char_count == 0)
     {
-      this->char_count = 1;
+      this->exponent = -1;
     }
 
     this->got_decimal_point = true;
@@ -1792,7 +1867,6 @@ bcd_test(void)
     const char  *result;
   } bcd_math_test;
   bcd_math_test math_tests[] = {
-#if 1
     { "BCD_ADD_01", bcd_op_add,                "1"                 ,                "2"                 ,                "3"                     }, // Debug
     { "BCD_ADD_02", bcd_op_add,         "99999999"                 ,                "1"                 ,        "100000000"                     }, // 33-bits
     { "BCD_ADD_03", bcd_op_add,        "999999999"                 ,                "1"                 ,       "1000000000"                     }, // Carry.
@@ -1808,7 +1882,7 @@ bcd_test(void)
     { "BCD_ADD_13", bcd_op_add,              "202s"                ,             "1234s"                ,            "-1436"                     }, // Neg + Neg.
     { "BCD_ADD_14", bcd_op_add,             "9990s"                ,             "1234s"                ,           "-11224"                     }, // Neg with carry.
     { "BCD_ADD_15", bcd_op_add,               "10.5"               ,                 ".5"               ,               "11"                     }, // decimal to whole.
-    { "BCD_ADD_16", bcd_op_add,                 ".1111111111111111",                 ".1111111111111111",                "0.222222222222222"     }, // No carry, truncate.
+    { "BCD_ADD_16", bcd_op_add,                 ".1111111111111111",                 ".1111111111111111",                "0.2222222222222222"    }, // No carry, no truncate.
     { "BCD_ADD_17", bcd_op_add,             "1000"                 ,             "1000"                 ,             "2000"                     }, // Trailing zeroes.
     { "BCD_ADD_18", bcd_op_add,                 ".00001"           ,                 ".00001"           ,                "0.00002"               }, // Significant zeroes.
     { "BCD_ADD_19", bcd_op_add,                "1.0000134s"        ,                 ".045"             ,               "-0.9550134"             },
@@ -1856,8 +1930,11 @@ bcd_test(void)
     { "BCD_MUL_30", bcd_op_mul,            "30000"                 ,              "200"                 ,          "6000000"                     }, // Many trailing zeroes.
     { "BCD_MUL_31", bcd_op_mul,                 ".009"             ,                 ".009"             ,                "0.000081"              }, // Irrelevent carry.
     { "BCD_MUL_32", bcd_op_mul,                "9"                 ,                "9"                 ,               "81"                     }, // Irrelevent carry.
+    { "BCD_MUL_33", bcd_op_mul,              "370"                 ,                "3"                 ,             "1110"                     }, // Math test.
+    { "BCD_MUL_34", bcd_op_mul,              "370"                 ,                "6"                 ,             "2220"                     }, // Math test.
+    { "BCD_MUL_35", bcd_op_mul,              "370"                 ,                "9"                 ,             "3330"                     }, // Math test.
+    { "BCD_MUL_36", bcd_op_mul,              "370"                 ,               "12"                 ,             "4440"                     }, // Math test.
 
-#endif
     { "BCD_DIV_01", bcd_op_div,                "6"                 ,                "2"                 ,                "3"                     }, // Simple div.
     { "BCD_DIV_02", bcd_op_div,              "246"                 ,                "3"                 ,               "82"                     }, // Slightly fancier.
     { "BCD_DIV_03", bcd_op_div, "1234567890123456"                 ,               "32"                 ,   "38580246566358"                     }, // Slightly fancier.
@@ -1866,11 +1943,11 @@ bcd_test(void)
     { "BCD_DIV_06", bcd_op_div,            "97531s"                ,              "132"                 ,             "-738.8712121212121"       }, // Neg / Pos
     { "BCD_DIV_07", bcd_op_div,       "2468013579s"                ,               "32s"                ,         "77125424.34375"               }, // Neg / Neg
     { "BCD_DIV_08", bcd_op_div, "9999999999999999"                 ,                 ".00234"           ,                "4.273504273504273e+18" }, // Whole / <1
-    { "BCD_DIV_09", bcd_op_div,                 ".45832"           ,               "32s"                ,               "-0.0199269565217391"    }, // <1 / Whole
+    { "BCD_DIV_09", bcd_op_div,                 ".45832"           ,               "32s"                ,               "-0.0143225"             }, // <1 / Whole
     { "BCD_DIV_10", bcd_op_div, "9999999999999999"                 ,                 ".000000000000001" ,                "9.999999999999999e+30" }, // Lrg / Sml
-    { "BCD_DIV_11", bcd_op_div,                 ".000000000000001" , "9999999999999999"                 ,                "1.e-31"                }, // Sml / Lrg
-    { "BCD_DIV_12", bcd_op_div,      "8745963210"                  ,              "101"                 ,         "86593694.14851485"            }, //
-    { "BCD_DIV_13", bcd_op_div,              "22"                  ,                "7"                 ,                "3.142857142857143"     }, // Pi
+    { "BCD_DIV_11", bcd_op_div,                 ".000000000000001" , "9999999999999999"                 ,                "1e-31"                 }, // Sml / Lrg
+    { "BCD_DIV_12", bcd_op_div,      "8745963210"                  ,              "101"                 ,         "86593695.14851485"            }, //
+    { "BCD_DIV_13", bcd_op_div,              "22"                  ,                "7"                 ,                "3.142857142857143"     }, // Pi-ish
     { "BCD_DIV_14", bcd_op_div,               "2"                  ,                "1.414213562373095" ,                "1.414213562373095"     }, // Square root of 2.
     { "BCD_DIV_15", bcd_op_div, "9999999999999999"                 , "7777777777777777"                 ,                "1.285714285714286"     }, // 16 / 16 = 16 digits.
   };
@@ -1925,34 +2002,34 @@ bcd_test(void)
 
     printf("Divide by zero test.\n");
     bcd *o1 = bcd_new(), *o2 = bcd_new();
-    if(bcd_sig_initialize(&o1->significand) != true)                   return false;
-    if(bcd_sig_initialize(&o2->significand) != true)                   return false;
-    if(bcd_sig_set_byte(&o1->significand, BCD_NUM_DIGITS, 1) != true)  return false;
+    if(bcd_sig_initialize(&o1->significand) != true)                    return false;
+    if(bcd_sig_initialize(&o2->significand) != true)                    return false;
+    if(bcd_sig_set_byte(&o1->significand, 0, 1) != true)                return false;
     o1->exponent = 1; o1->got_decimal_point = 0; o1->sign = 0;
     o2->exponent = 1; o2->got_decimal_point = 0; o2->sign = 0;
-    if(bcd_op_div(o1, o2) != false)                                    return false;
+    if(bcd_op_div(o1, o2) != false)                                     return false;
 
     printf("Mul very large and very small numbers.\n");
     int x;
     for(x = 0; x < BCD_NUM_DIGITS; x++) 
     {
-      if(bcd_sig_set_byte(&o1->significand, x, 9) != true)             return false;
+      if(bcd_sig_set_byte(&o1->significand, x, 9) != true)              return false;
     }
-    if(bcd_sig_set_byte(&o2->significand, BCD_NUM_DIGITS, 1) != true)  return false;
+    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                return false;
     o1->exponent = 15; o1->got_decimal_point = 0; o1->sign = 0;
     o2->exponent =  2; o2->got_decimal_point = 0; o2->sign = 0;
-    if(bcd_op_mul(o1, o2) != true)                                     return false;
+    if(bcd_op_mul(o1, o2) != true)                                      return false;
     memset(buf, 0, sizeof(buf));
-    if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)           return false;
-    if((retcode = (strcmp("9.999999999999999e17", buf) == 0)) != true) return false;
+    if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)            return false;
+    if((retcode = (strcmp("9.999999999999999e+17", buf) == 0)) != true) return false;
 
     printf("Now add a very small number.\n");
-    if(bcd_sig_set_byte(&o2->significand, BCD_NUM_DIGITS, 1) != true)  return false;
+    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                return false;
     o2->exponent =  1; o2->got_decimal_point = 0; o2->sign = 0;
-    if(bcd_op_add(o1, o2) != true)                                     return false;
+    if(bcd_op_add(o1, o2) != true)                                      return false;
     memset(buf, 0, sizeof(buf));
     if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)           return false;
-    if((retcode = (strcmp("9.999999999999999e17", buf) == 0)) != true) return false;
+    if((retcode = (strcmp("9.999999999999999e+17", buf) == 0)) != true) return false;
     bcd_delete(o1); bcd_delete(o2);
   }
 #endif // TEST_SPECIAL
