@@ -18,6 +18,7 @@
 #include "operator.h"
 #include "raw_stdin.h"
 #include "stack.h"
+#include "test.h"
 
 /******************************** PRIVATE API *********************************/
 
@@ -47,7 +48,7 @@ test_run_one_test(const char *name,
 
 /********************************* PUBLIC API *********************************/
 
-int main(int argc, char **argv)
+bool test(void)
 {
   bool retcode = true;
 
@@ -61,14 +62,14 @@ int main(int argc, char **argv)
   } unit_test;
   unit_test tests[] = {
     { "BCD",         bcd_test         },
-//    { "Calculator",  calculator_test  },
-//    { "FP Exponent", fp_exp_test      },
-//    { "HEX",         hex_test         },
-//    { "List",        list_test        },
-//    { "Operand",     operand_test     },
-//    { "Operator",    operator_test    },
-//    { "Raw Console", raw_stdin_test   },
-//    { "Stack",       stack_test       },
+    { "Calculator",  calculator_test  },
+    { "FP Exponent", fp_exp_test      },
+    { "HEX",         hex_test         },
+    { "List",        list_test        },
+    { "Operand",     operand_test     },
+    { "Operator",    operator_test    },
+    { "Raw Console", raw_stdin_test   },
+    { "Stack",       stack_test       },
   };
   size_t tests_size = (sizeof(tests) / sizeof(unit_test));
 

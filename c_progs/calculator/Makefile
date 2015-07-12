@@ -4,6 +4,7 @@ BASE_OBJS = bcd.o        \
             fp_exp.o     \
             hex.o        \
             list.o       \
+            main.o       \
             operand.o    \
             operator.o   \
             raw_stdin.o  \
@@ -15,7 +16,7 @@ ifeq ($(TEST), 1)
 	BUILD_FLAGS += -DTEST
 	TARGET = test
 else
-	OBJS = main.o $(BASE_OBJS)
+	OBJS = ui.o $(BASE_OBJS)
 	TARGET = calculator
 
 endif

@@ -702,9 +702,9 @@ calculator_test(void)
   calculator_test tests[] = {
     { "1+2*3",           true,  true,      "7"            }, // Order of operations.
     { "\b10+20*30",      true,  true,    "610"            }, // Order of operations.
-//    { "\b10/0+20*30",   false, false,       ""            }, // Divide by zero.
-//    { "(1+2)*3",         true,  true,      "9"            }, // Parentheses override order.
-//    { "*3",              true,  true,     "27"            }, // Follow-on to the previous result.
+    { "\b10/0+20*30",   false, false,       ""            }, // Divide by zero.
+    { "(1+2)*3",         true,  true,      "9"            }, // Parentheses override order.
+    { "*3",              true,  true,     "27"            }, // Follow-on to the previous result.
     { "\b7/10",          true,  true,      "0.7"          }, // int / int = float.
     { "\b7.4/10",        true,  true,      "0.74"         }, // float / int.
     { "\b2.5*2",         true,  true,      "5"            }, // float * int.
