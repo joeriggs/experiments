@@ -25,6 +25,8 @@ hex *hex_new(void);
 
 bool hex_delete(hex *this);
 
+bool hex_add_char_is_valid_operand(char c);
+
 bool hex_add_char(hex *this, char c);
 
 bool hex_to_str(hex  *this, char  *buf, size_t buf_size);

@@ -23,6 +23,10 @@ typedef struct operator operator;
 
 operator *operator_new(const char c);
 
+bool operator_delete(operator *this);
+
+bool operator_is_valid_operator(char c);
+
 bool operator_precedence(operator *this, int *input, int *stack);
 
 bool operator_get_name(operator *this, const char **op_name);

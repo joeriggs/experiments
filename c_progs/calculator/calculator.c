@@ -39,9 +39,9 @@ struct calculator {
   /* A buffer that's used to build the console output. */
   char console_buf[1024];
 
-  /* The number base we're currently configured to use.  This refers to things
+  /* The operand number base we're configured to use.  This refers to things
    * like base_10 or base_16. */
-  calculator_base base;
+  operand_base base;
 };
   
 /******************************************************************************
@@ -62,21 +62,27 @@ struct calculator {
 static bool
 calculator_postfix(calculator *this)
 {
-  bool retcode = false;
+  bool retcode = true;
 
   /* A stack to use while processing the postfix. */
   stack *tmp_stack;
-  if((retcode = ((tmp_stack = stack_new()) != (stack *) 0)) == false)
+  if((tmp_stack = stack_new()) == (stack *) 0)
   {
-    return retcode;
+    return false;
   }
 
   /* These are used while processing the infix equation. */
   void *cur_obj;
   int type;
-  while((retcode == true) &&
-        (retcode = list_rem_head(this->postfix_list, &cur_obj, &type)) == true)
+  while(retcode == true)
   {
+    /* When the postfix_list is empty, we're done. */
+    if((retcode = list_rem_head(this->postfix_list, &cur_obj, &type)) == false)
+    {
+      retcode = true;
+      break;
+    }
+
     /* Operands immediately go onto the stack. */
     if(type == LIST_OBJ_TYPE_OPERAND)
     {
@@ -119,30 +125,51 @@ calculator_postfix(calculator *this)
       }
     }
 
+    /* Unknown operand type.  Shouldn't happen. */
     else
     {
       retcode = false;
     }
   }
 
-  /* If the equation was completed successfully, then the postfix_list will be
-   * empty and the result will be the only entry on the stack. */
-  if(list_get_tail(this->postfix_list, &cur_obj, &type) == false)
+  /* We must meet all of the following criteria in order for the equation to be
+   * deemed successful:
+   * 1. retcode == true.
+   * 2. The postfix_list is empty.
+   * 3. The stack:
+   *    A. Is empty (Result is zero).
+   *    B. Contains exactly one OPERAND (the result).
+   */
+  if(retcode == true)
   {
-    void *result;
-    if(((retcode = stack_pop(tmp_stack, &result)) == true) &&
-       ((retcode = stack_pop(tmp_stack, &result)) == false))
+    if(list_get_tail(this->postfix_list, &cur_obj, &type) == false)
     {
-      /* If we were totally successful, this is where we set retcode. */
-      retcode = list_add_tail(this->infix_list, result, LIST_OBJ_TYPE_OPERAND);
+      void *result;
+      if(stack_pop(tmp_stack, &result) == true)
+      {
+        if(stack_pop(tmp_stack, &result) == false)
+        {
+          /* If we were totally successful, this is where we set retcode. */
+          retcode = list_add_tail(this->infix_list, result, LIST_OBJ_TYPE_OPERAND);
+        }
+        else
+        {
+          /* There are too many values on the stack.  That's an error. */
+          retcode = false;
+        }
+      }
+    }
+    else
+    {
+      /* The postfix_list isn't empty.  That's an error. */
+      retcode = false;
     }
   }
 
-  /* If we failed, purge the list. */
-  else
+  /* If we failed, purge the list, because there is no result. */
+  if(retcode == false)
   {
     list_del_all(this->postfix_list);
-    retcode = false;
   }
 
   stack_delete(tmp_stack);
@@ -223,8 +250,13 @@ calculator_infix2postfix(calculator *this)
             break;
           }
 
-          /* Add the operator to the postfix. */
-          retcode = list_add_tail(this->postfix_list, stk_operator, LIST_OBJ_TYPE_OPERATOR);
+          /* If the operator needs to be processed later, add it to the postfix
+           * expression. */
+          operator_type op_type;
+          if((operator_get_op_type(stk_operator, &op_type) == true) && (op_type != op_type_none))
+          {
+            retcode = list_add_tail(this->postfix_list, stk_operator, LIST_OBJ_TYPE_OPERATOR);
+          }
         }
       }
 
@@ -245,7 +277,11 @@ calculator_infix2postfix(calculator *this)
   /* When we're done, pop the rest of the stack and add it to the postfix. */
   while((retcode == true) && (stack_pop(tmp_stack, &stk_operator) == true))
   {
-    retcode = list_add_tail(this->postfix_list, stk_operator, LIST_OBJ_TYPE_OPERATOR);
+    operator_type op_type;
+    if((operator_get_op_type(stk_operator, &op_type) == true) && (op_type != op_type_none))
+    {
+      retcode = list_add_tail(this->postfix_list, stk_operator, LIST_OBJ_TYPE_OPERATOR);
+    }
   }
 
   /* The stack and the infix_list should be empty. */
@@ -360,11 +396,11 @@ calculator_set_base_trv_cb(const void *ctx,
        * Let the operand object fend for itself. */
       switch(this->base)
       {
-      case calculator_base_10:
+      case operand_base_10:
         retcode = operand_set_base((operand *) object, operand_base_10);
         break;
 
-      case calculator_base_16:
+      case operand_base_16:
         retcode = operand_set_base((operand *) object, operand_base_16);
         break;
 
@@ -413,7 +449,7 @@ calculator_new(void)
        * and initialize the object. */
 
       /* The default base is decimal (base_10). */
-      this->base = calculator_base_10;
+      this->base = operand_base_10;
     }
 
     else
@@ -457,30 +493,30 @@ calculator_delete(calculator *this)
  * operand base settings are not absolutely tied together.
  *
  * Input:
- *   this = A pointer to the calculator object.
+ *       this = A pointer to the calculator object.
  *
- *   base = A pointer to a variable that is set to the current base.
+ *   cur_base = A pointer to a variable that is set to the current base.
  *
  * Output:
  *   true  = success.  *base = the current base.
- *   false = failure.  *base = calculator_base_unknown (if base != 0).
+ *   false = failure.  *base = operand_base_unknown (if base != 0).
  */
 bool
-calculator_get_base(calculator *this,
-                    calculator_base *base)
+calculator_get_operand_base(calculator *this,
+                            operand_base *cur_base)
 {
   bool retcode = false;
 
-  if(base != (calculator_base *) 0)
+  if(cur_base != (operand_base *) 0)
   {
     if(this != (calculator *) 0)
     {
-      *base = this->base;
+      *cur_base = this->base;
       retcode = true;
     }
     else
     {
-      *base = calculator_base_unknown;
+      *cur_base = operand_base_unknown;
     }
   }
 
@@ -492,29 +528,29 @@ calculator_get_base(calculator *this,
  * the specified base.
  *
  * Input:
- *   this = A pointer to the calculator object.
+ *       this = A pointer to the calculator object.
  *
- *   base = The new base that we should set.
+ *   new_base = The new base that we should set.
  *
  * Output:
  *   true  = success.  The calculator is now using the new base.
  *   false = failure.  The calculator is NOT using the new base.  State unknown.
  */
 bool
-calculator_set_base(calculator *this,
-                    calculator_base base)
+calculator_set_operand_base(calculator *this,
+                            operand_base new_base)
 {
   bool retcode = false;
 
   if(this != (calculator *) 0)
   {
-    switch(base)
+    switch(new_base)
     {
-    case calculator_base_10:
-    case calculator_base_16:
+    case operand_base_10:
+    case operand_base_16:
       /* This is a known base.  Save it and then walk the infix list and set
        * all of the operands to the specified base. */
-      this->base = base;
+      this->base = new_base;
       retcode = list_traverse(this->infix_list, calculator_set_base_trv_cb, this);
       break;
 
@@ -546,71 +582,87 @@ calculator_add_char(calculator *this,
 {
   bool retcode = false;
 
-  switch(c)
+  if(this != (calculator *) 0)
   {
-  /* Backspace. */
-  case 0x7F:
-  case 0x08:
-    /* Delete the last item in the list. */
-    retcode = list_del_tail(this->infix_list);
-    break;
-
-  /* Complete the equation.  Save the result. */
-  case '=':
-    if((retcode = calculator_infix2postfix(this)) == true)
+    /* Backspace. */
+    if((c == 0x7F) || (c == 0x08))
     {
-      retcode = calculator_postfix(this);
+      /* Delete the last item in the list. */
+      retcode = list_del_tail(this->infix_list);
     }
-    break;
 
-  /* This is where most characters end up.  If they get to here, then we
-   * process them as regular calculator input. */
-  default:
+    /* Complete the equation.  Save the result. */
+    else if(c == '=')
     {
-      void *obj = (void *) 0;
-      int type = LIST_OBJ_TYPE_NONE;
-
-      /* Get the last operator/operand object that we processed.  If the most
-       * recent object from the end of the infix list isn't an operand, create
-       * a new operand object now. */
-      operand *cur_operand;
-      if((list_get_tail(this->infix_list, &obj, &type) == true) && (type == LIST_OBJ_TYPE_OPERAND))
+      if((retcode = calculator_infix2postfix(this)) == true)
       {
-        cur_operand = (operand *) obj;
+        retcode = calculator_postfix(this);
       }
-      else
-      {
-        cur_operand = operand_new(this->base);
-      }
+    }
 
-      /* Try to add the character as an operand. */
-      if(cur_operand != (operand *) 0)
+    /* Operands. */
+    else if(operand_add_char_is_valid_operand(this->base, c) == true)
+    {
+      do
       {
-        if((retcode = operand_add_char(cur_operand, c)) == true)
+        /* Get the last token on the infix_list.  If it's an operand, then we
+         * might want to use it to add to the current operand. */
+        void *obj = (void *) 0;
+        int type = LIST_OBJ_TYPE_NONE;
+        operand *cur_operand = (operand *) 0;
+        if((list_get_tail(this->infix_list, &obj, &type) == true) && (type == LIST_OBJ_TYPE_OPERAND))
         {
-          /* If we just created a new operand object, add it to the list. */
-          if(cur_operand != obj)
+          /* We already have an operand object.  Can we use it for this char? */
+          if(operand_add_char_allowed(obj) == true)
           {
-            if((retcode = list_add_tail(this->infix_list, cur_operand, LIST_OBJ_TYPE_OPERAND)) == false)
+            /* Yes.  We're all set. */
+            cur_operand = (operand *) obj;
+          }
+
+          /* We have an operand object that we can't use for this char.  Delete
+           * it.  We'll have to allocate a new object later. */
+          else
+          {
+            if(list_del_tail(this->infix_list) == false)
             {
-              operand_delete(cur_operand);
+              break;
             }
+            cur_operand = (operand *) 0;
           }
         }
-      }
 
-      /* If we weren't able to add it as an operand, then try to add it as an
-       * operator. */
-      if(retcode == false)
-      {
-        operator *cur_operator = operator_new(c);
-        if(cur_operator != (operator *) 0)
+        /* If we didn't find an operand object, allocate one now. */
+        if(cur_operand == (operand *) 0)
         {
-          retcode = list_add_tail(this->infix_list, cur_operator, LIST_OBJ_TYPE_OPERATOR);
+          if((cur_operand = operand_new(this->base)) == (operand *) 0)
+          {
+            break;
+          }
+
+          if((retcode = list_add_tail(this->infix_list, cur_operand, LIST_OBJ_TYPE_OPERAND)) == false)
+          {
+            operand_delete(cur_operand);
+            break;
+          }
+        }
+
+        /* Okay, we have the correct operand object.  Add the character. */
+        retcode = operand_add_char(cur_operand, c);
+      } while(0);
+    }
+
+    /* Operators. */
+    else if(operator_is_valid_operator(c) == true)
+    {
+      operator *cur_operator = operator_new(c);
+      if(cur_operator != (operator *) 0)
+      {
+        if((retcode = list_add_tail(this->infix_list, cur_operator, LIST_OBJ_TYPE_OPERATOR)) == false)
+        {
+          operator_delete(cur_operator);
         }
       }
     }
-    break;
   }
 
   return retcode;
@@ -647,8 +699,14 @@ calculator_get_console(calculator *this,
     memset(this->console_buf, 0, sizeof(this->console_buf));
     if((retcode = list_traverse(this->infix_list, calculator_get_console_trv_cb, this)) == true)
     {
+      /* If the infix_list is empty, pass a zero back to the user. */
+      if(strlen(this->console_buf) == 0)
+      {
+        strncpy(buf, "0", buf_size);
+      }
+
       /* Pass it back to the caller. */
-      if(strlen(this->console_buf) > (buf_size - 1))
+      else if(strlen(this->console_buf) > (buf_size - 1))
       {
         /* Allow room for the NULL terminator. */
         char *p = this->console_buf + (strlen(this->console_buf) - (buf_size - 1));
@@ -675,21 +733,21 @@ calculator_test(void)
 {
   /* Make sure an empty calculator_delete() fails. */
   DBG_PRINT("calculator_delete(0)\n");
-  if(calculator_delete((calculator *) 0) != false)                                   return false;
+  if(calculator_delete((calculator *) 0) != false)                                       return false;
 
   /* Create a calculator object. */
   DBG_PRINT("calculator_new()\n");
   calculator *this = calculator_new();
-  if(this == (calculator *) 0)                                                       return false;
+  if(this == (calculator *) 0)                                                           return false;
 
   /* Test switching the base back and forth. */
   DBG_PRINT("calculator_get_base()\n");
-  calculator_base base;
-  if((calculator_get_base(this, &base) != true) || (base != calculator_base_10))     return false;
-  DBG_PRINT("calculator_set_base(calculator_base_16)\n");
-  if(calculator_set_base(this, calculator_base_16) != true)                          return false;
-  DBG_PRINT("calculator_set_base(calculator_base_10)\n");
-  if(calculator_set_base(this, calculator_base_10) != true)                          return false;
+  operand_base base;
+  if((calculator_get_operand_base(this, &base) != true) || (base != operand_base_10))    return false;
+  DBG_PRINT("calculator_set_base(operand_base_16)\n");
+  if(calculator_set_operand_base(this, operand_base_16) != true)                         return false;
+  DBG_PRINT("calculator_set_base(operand_base_10)\n");
+  if(calculator_set_operand_base(this, operand_base_10) != true)                         return false;
 
   /* Loop through some math problems.  This tests the basic functionality of
    * the calculator.  We're checking to make sure it can do math. */
@@ -700,19 +758,20 @@ calculator_test(void)
     const char *result;
   } calculator_test;
   calculator_test tests[] = {
-    { "1+2*3",           true,  true,      "7"            }, // Order of operations.
-    { "\b10+20*30",      true,  true,    "610"            }, // Order of operations.
-    { "\b10/0+20*30",   false, false,       ""            }, // Divide by zero.
-    { "(1+2)*3",         true,  true,      "9"            }, // Parentheses override order.
-    { "*3",              true,  true,     "27"            }, // Follow-on to the previous result.
-    { "\b7/10",          true,  true,      "0.7"          }, // int / int = float.
-    { "\b7.4/10",        true,  true,      "0.74"         }, // float / int.
-    { "\b2.5*2",         true,  true,      "5"            }, // float * int.
-    { "\b2^3",           true,  true,      "8"            }, // int ^ int.
-    { "\b2^3s",          true,  true,      "0.125000"     }, // int ^ -int.
-    { "\b2.34^5",        true,  true,     "70.1583371424" }, // float ^ int.
-    { "\b3^12.345",      true,  true, "776357.74428398"   }, // int ^ float.
-    { "\b2.34^5.678",    true,  true,    "124.8554885559" }, // float ^ float.
+    { "",              true,  true,      "0"            }, // Empty equation.
+    { "1+2*3",         true,  true,      "7"            }, // Order of operations.
+    { "10+20*30",      true,  true,    "610"            }, // Order of operations.
+    { "10/0+20*30",   false, false,       ""            }, // Divide by zero.
+    { "(1+2)*3",       true,  true,      "9"            }, // Parentheses override order.
+    { "*3",            true,  true,     "27"            }, // Follow-on to the previous result.
+    { "7/10",          true,  true,      "0.7"          }, // int / int = float.
+    { "7.4/10",        true,  true,      "0.74"         }, // float / int.
+    { "2.5*2",         true,  true,      "5"            }, // float * int.
+    { "2^3",           true,  true,      "8"            }, // int ^ int.
+    { "2^3s",          true,  true,      "0.125000"     }, // int ^ -int.
+    { "2.34^5",        true,  true,     "70.1583371424" }, // float ^ int.
+    { "3^12.345",      true,  true, "776357.74428398"   }, // int ^ float.
+    { "2.34^5.678",    true,  true,    "124.8554885559" }, // float ^ float.
   };
   size_t calculator_test_size = (sizeof(tests) / sizeof(calculator_test));
 
@@ -725,25 +784,34 @@ calculator_test(void)
     printf("%s\n", infix);
     while(*infix)
     {
-      if(calculator_add_char(this, *(infix++)) != true)                              return false;
+      if(calculator_add_char(this, *(infix++)) != true)                                  return false;
     }
 
     /* Traverse the infix list as decimal. */
-    DBG_PRINT("calculator_get_console(1)\n");
+    DBG_PRINT("calculator_get_console()\n");
     char buf[1024];
     this->console_buf[0] = 0;
-    if(calculator_get_console(this, buf, sizeof(buf)) != true)                       return false;
-    DBG_PRINT("'%s'\n", buf);
+    buf[0] = 0;
+    if(calculator_get_console(this, buf, sizeof(buf)) != true)                           return false;
+    DBG_PRINT("infix equation: '%s'\n", buf);
 
-    if(calculator_infix2postfix(this) != true)                                       return false;
-    if(calculator_postfix(this) != t->postfix_retcode)                               return false;
-    if(calculator_get_console(this, buf, sizeof(buf)) != t->console_retcode)         return false;
-    if(t->console_retcode == true) printf(" = '%s'\n", buf);
-    if(strcmp(buf, t->result) != 0)                                                  return false;
+    if(calculator_infix2postfix(this) != true)                                           return false;
+    this->console_buf[0] = 0;
+    if(list_traverse(this->postfix_list, calculator_get_console_trv_cb, this) == false)  return false;
+    DBG_PRINT("postfix equation: '%s'\n", this->console_buf);
+
+    if(calculator_postfix(this) != t->postfix_retcode)                                   return false;
+    if(t->postfix_retcode == true)
+    {
+      buf[0] = 0;
+      if(calculator_get_console(this, buf, sizeof(buf)) != t->console_retcode)           return false;
+      if(t->console_retcode == true) printf(" = '%s'\n", buf);
+      if(strcmp(buf, t->result) != 0) { printf("'%s' != '%s'.\n", buf, t->result);       return false; }
+    }
   }
 
   DBG_PRINT("calculator_delete(this)\n");
-  if(calculator_delete(this) != true)                                                return false;
+  if(calculator_delete(this) != true)                                                    return false;
 
   return true;
 }

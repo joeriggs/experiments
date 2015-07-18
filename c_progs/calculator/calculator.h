@@ -6,13 +6,9 @@
 #ifndef __CALCULATOR_H__
 #define __CALCULATOR_H__
 
-/****************************** CLASS DEFINITION ******************************/
+#include "operand.h"
 
-typedef enum {
-  calculator_base_10,
-  calculator_base_16,
-  calculator_base_unknown
-} calculator_base;
+/****************************** CLASS DEFINITION ******************************/
 
 typedef struct calculator calculator;
 
@@ -22,9 +18,9 @@ calculator *calculator_new(void);
 
 bool calculator_delete(calculator *this);
 
-bool calculator_get_base(calculator *this, calculator_base *base);
+bool calculator_get_operand_base(calculator *this, operand_base *cur_base);
 
-bool calculator_set_base(calculator *this, calculator_base base);
+bool calculator_set_operand_base(calculator *this, operand_base  new_base);
 
 bool calculator_add_char(calculator *this, char c);
 

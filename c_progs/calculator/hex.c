@@ -188,6 +188,37 @@ hex_delete(hex *this)
   return retcode;
 }
 
+/* Check to see if the specified character is a valid hex operand character that
+ * can be passed to hex_add_char().
+ *
+ * Input:
+ *   c = The character to check.
+ *
+ * Output:
+ *   true  = Yes, c is a valid operand character.
+ *   false = No, c is NOT a valid operand character.
+ */
+bool
+hex_add_char_is_valid_operand(char c)
+{
+  bool retcode = false;
+
+  if((c >= '0') && (c <= '9'))
+  {
+    retcode = true;
+  }
+  else
+  {
+    c &= 0xDF;
+    if((c == 'S') || ((c >= 'A') && (c <= 'F')))
+    {
+      retcode = true;
+    }
+  }
+
+  return retcode;
+}
+
 /* Attempt to add a character to the hex object.  The character is checked to
  * see if it's a valid part of a hexadecimal number.  If it's valid, it's added.
  * Note that it's possible for a character to be dropped because we don't have

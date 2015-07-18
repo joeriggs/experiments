@@ -59,6 +59,32 @@ struct operator {
 /* This function checks the operator and figures out which operator it is.
  *
  * Input:
+ *   c = The one-character operator mnemonic.  All operators are one character.
+ *
+ * Output:
+ *   Returns a pointer to the operator_property member that represents the
+ *   operator in c.
+ *   Returns 0 if c is NOT a valid operator.
+ */
+static operator_property *
+operator_get_op_prop(char c)
+{
+  operator_property *retval = (operator_property *) 0;
+
+  int i;
+  for(i = 0; operator_properties[i].value != 0; i++) {
+    if(c == operator_properties[i].value) {
+      retval = &operator_properties[i];
+      break;
+    }
+  }
+
+  return retval;
+}
+
+/* This function checks the operator and figures out which operator it is.
+ *
+ * Input:
  *   this = A pointer to the operator object.
  *
  *   c    = The one-character operator mnemonic.  All operators are one character.
@@ -76,14 +102,7 @@ operator_set_op_prop(operator *this,
 
   if(this != (operator *) 0)
   {
-    int i;
-    for(i = 0; operator_properties[i].value != 0; i++) {
-      if(c == operator_properties[i].value) {
-        this->op_prop = &operator_properties[i];
-        retcode = true;
-        break;
-      }
-    }
+    retcode = ((this->op_prop = operator_get_op_prop(c)) != (operator_property *) 0) ? true : false;
   }
 
   return retcode;
@@ -141,6 +160,24 @@ operator_delete(operator *this)
   return retcode;
 }
 
+/* Check to see if the specified character is a valid operator that can be
+ * passed to operator_new().
+ *
+ * Input:
+ *   c = The character to check.
+ *
+ * Output:
+ *   true  = Yes, c is a valid operator character.
+ *   false = No, c is NOT a valid operator character.
+ */
+bool
+operator_is_valid_operator(char c)
+{
+  bool retcode = (operator_get_op_prop(c) != (operator_property *) 0) ? true : false;
+
+  return retcode;
+}
+
 /* This function returns a value that represents the precedence of an operator.
  * Precedence deal with the order in which operators should be processed.
  *
@@ -151,9 +188,9 @@ operator_delete(operator *this)
  * Input:
  *   this = A pointer to the operator object.
  *
- *   input = A pointer to a variable to will receive the input precedence.
+ *   input = A pointer to a variable that will receive the input precedence.
  *
- *   stack = A pointer to a variable to will receive the stack precedence.
+ *   stack = A pointer to a variable that will receive the stack precedence.
  *
  * Output:
  *   true  = success.  *input and *stack are set appropriately.

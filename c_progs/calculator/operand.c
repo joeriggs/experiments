@@ -30,6 +30,11 @@ struct operand {
   /* The number base we're currently configured to use.  This refers to things
    * like base_10 or base_16. */
   operand_base base;
+
+  /* A newly-created operand object supports the operand_add_char() method.
+   * After the object has been used in an equation calculation it is no longer
+   * eligible for operand_add_char(). */
+  bool add_char_allowed;
 };
   
 /******************************************************************************
@@ -76,6 +81,8 @@ operand_op_add(operand *op1,
     default:
       break;
     }
+
+    op1->add_char_allowed = op2->add_char_allowed = false;
   }
     
   return retcode;
@@ -117,6 +124,8 @@ operand_op_sub(operand *op1,
     default:
       break;
     }
+
+    op1->add_char_allowed = op2->add_char_allowed = false;
   }
 
   return retcode;
@@ -159,6 +168,8 @@ operand_op_mul(operand *op1,
     default:
       break;
     }
+
+    op1->add_char_allowed = op2->add_char_allowed = false;
   }
 
   return retcode;
@@ -200,6 +211,8 @@ operand_op_div(operand *op1,
     default:
       break;
     }
+
+    op1->add_char_allowed = op2->add_char_allowed = false;
   }
 
   return retcode;
@@ -240,6 +253,8 @@ operand_op_exp(operand *op1,
     default:
       break;
     }
+
+    op1->add_char_allowed = op2->add_char_allowed = false;
   }
 
   return retcode;
@@ -279,6 +294,8 @@ operand_op_and(operand *op1,
     default:
       break;
     }
+
+    op1->add_char_allowed = op2->add_char_allowed = false;
   }
 
   return retcode;
@@ -318,6 +335,8 @@ operand_op_or(operand *op1,
     default:
       break;
     }
+
+    op1->add_char_allowed = op2->add_char_allowed = false;
   }
 
   return retcode;
@@ -358,6 +377,8 @@ operand_op_xor(operand *op1,
     default:
       break;
     }
+
+    op1->add_char_allowed = op2->add_char_allowed = false;
   }
 
   return retcode;
@@ -392,10 +413,13 @@ operand_op_not(operand *this)
     default:
       break;
     }
+
+    this->add_char_allowed = false;
   }
 
   return retcode;
 }
+
 /******************************************************************************
  ********************************* PUBLIC API *********************************
  *****************************************************************************/
@@ -417,7 +441,9 @@ operand_new(operand_base base)
 
   if(this != (operand *) 0)
   {
-    this->base    = base;
+    this->base = base;
+    this->add_char_allowed = true;
+
     if( ((this->decnum = bcd_new()) == (bcd *) 0) ||
         ((this->hexnum = hex_new()) == (hex *) 0) )
     {
@@ -541,6 +567,67 @@ operand_set_base(operand *this,
   return retcode;
 }
 
+/* Check to see if the specified character is a valid operand character that
+ * can be passed to operand_add_char().
+ *
+ * Input:
+ *   base = The requested number base (base_10, base_16, etc).  We need this in
+ *          order to know which base class to pass this request to.
+ *
+ *   c    = The character to check.
+ *
+ * Output:
+ *   true  = Yes, c is a valid operand character.
+ *   false = No, c is NOT a valid operand character.
+ */
+bool
+operand_add_char_is_valid_operand(operand_base base,
+                                  char c)
+{
+  bool retcode = false;
+
+  /* Let the class for each number type decide if the character is valid. */
+  switch(base)
+  {
+  case operand_base_10:
+    retcode = bcd_add_char_is_valid_operand(c);
+    break;
+
+  case operand_base_16:
+    retcode = hex_add_char_is_valid_operand(c);
+    break;
+
+  default:
+    break;
+  }
+
+  return retcode;
+}
+
+/* Check to see if the operand class will allow character input.  Once an
+ * operand has been used in an equation it is no longer eligible for character
+ * input.
+ *
+ * Input:
+ *   this = A pointer to the operand object.
+ *
+ * Output:
+ *   true  = success.  The object will accept input via operand_add_char().
+ *   false = failure.  The object is not eligible for character input.
+ */
+bool
+operand_add_char_allowed(operand *this)
+{
+  bool retcode = false;
+
+  if(this != (operand *) 0)
+  {
+    retcode = this->add_char_allowed;
+  }
+
+  return retcode;
+}
+
 /* Attempt to add a character to the operand object.
  *
  * Input:
@@ -559,7 +646,7 @@ operand_add_char(operand *this,
 {
   bool retcode = false;
 
-  if(this != (operand *) 0)
+  if((this != (operand *) 0) && (this->add_char_allowed == true))
   {
     /* Get the base for the operand, and then pass the character to the
      * applicable ADT. */

@@ -41,6 +41,10 @@ bool operand_get_base(operand *this, operand_base *base);
 
 bool operand_set_base(operand *this, operand_base base);
 
+bool operand_add_char_is_valid_operand(operand_base base, char c);
+
+bool operand_add_char_allowed(operand *this);
+
 bool operand_add_char(operand *this, char c);
 
 bool operand_to_str(operand *this, char *buf, size_t buf_size);

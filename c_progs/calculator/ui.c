@@ -73,7 +73,7 @@ calc_ui_display_calc(calculator *calc)
   if( (calc == (calculator *) 0) ||
       (calculator_get_console(calc, calc_obj_buf, calc_obj_buf_size) == false) )
   {
-    snprintf(calc_obj_buf, (calc_obj_buf_size - 1), "ERROR");
+    snprintf(calc_obj_buf, (calc_obj_buf_size - 1), "CALCULATOR UI ERROR");
   }
 
   /* Now stretch/shrink the console data to fit the calculator's display. */
@@ -97,13 +97,13 @@ calc_ui_display_calc(calculator *calc)
   /* Get the hex/dec setting. */
   char   base_str[8];
   size_t base_str_max = (sizeof(base_str) - 1);
-  calculator_base base;
-  if(calculator_get_base(calc, &base) == true)
+  operand_base base;
+  if(calculator_get_operand_base(calc, &base) == true)
   {
     switch(base)
     {
-    case calculator_base_10: strncpy(base_str, "dec", base_str_max); break;
-    case calculator_base_16: strncpy(base_str, "hex", base_str_max); break;
+    case operand_base_10: strncpy(base_str, "dec", base_str_max); break;
+    case operand_base_16: strncpy(base_str, "hex", base_str_max); break;
     default:                 strncpy(base_str, "!!!", base_str_max); break;
     }
   }
@@ -148,17 +148,17 @@ bool ui(void)
 
         case 'm':
           {
-            calculator_base cur_base;
-            calculator_base new_base;
-            if(calculator_get_base(calc, &cur_base) == true)
+            operand_base cur_base;
+            if(calculator_get_operand_base(calc, &cur_base) == true)
             {
+              operand_base new_base;
               switch(cur_base)
               {
-              case calculator_base_10: new_base = calculator_base_16;      break;
-              case calculator_base_16: new_base = calculator_base_10;      break;
-              default:                 new_base = calculator_base_unknown; break;
+              case operand_base_10: new_base = operand_base_16;      break;
+              case operand_base_16: new_base = operand_base_10;      break;
+              default:              new_base = operand_base_unknown; break;
               }
-              calculator_set_base(calc, new_base);
+              calculator_set_operand_base(calc, new_base);
             }
           }
           break;
