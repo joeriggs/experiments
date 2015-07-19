@@ -25,7 +25,7 @@
  *   N/A.
  */
 static void
-calc_ui_display_help(void)
+ui_display_help(void)
 {
   fprintf(stderr, "\n"
     "This is a simple text-based math calculator.\n"
@@ -61,19 +61,22 @@ calc_ui_display_help(void)
  *   false = failure.  The calculator display is NOT updated.
  */
 static bool
-calc_ui_display_calc(calculator *calc)
+ui_display_calc(calculator *calc)
 {
   bool retcode = false;
 
   char   calc_obj_buf[CALC_DISPLAY_WINDOW_WIDTH];
   size_t calc_obj_buf_size = sizeof(calc_obj_buf);
 
-  /* If the caller passes us a NULL calculator object, then display an error
-   * message.  Otherwise get the console data from the calculator object. */
-  if( (calc == (calculator *) 0) ||
-      (calculator_get_console(calc, calc_obj_buf, calc_obj_buf_size) == false) )
+  /* If the caller passes us a NULL calculator object, then display an error. */
+  if(calc == (calculator *) 0)
   {
-    snprintf(calc_obj_buf, (calc_obj_buf_size - 1), "CALCULATOR UI ERROR");
+    snprintf(calc_obj_buf, (calc_obj_buf_size - 1), "ERROR");
+  }
+  /* Get the console data from the calculator object. */
+  else if(calculator_get_console(calc, calc_obj_buf, calc_obj_buf_size) == false)
+  {
+    snprintf(calc_obj_buf, (calc_obj_buf_size - 1), "Error");
   }
 
   /* Now stretch/shrink the console data to fit the calculator's display. */
@@ -127,11 +130,10 @@ bool ui(void)
   /* Create the console and calculator objects. */
   raw_stdin *console = raw_stdin_new();
   calculator *calc = calculator_new();
-  if( (console != (raw_stdin *) 0) &&
-      (calc != (calculator *) 0) )
+  if( (console != (raw_stdin *) 0) && (calc != (calculator *) 0) )
   {
     fprintf(stderr, "Enter an equation.  'h' for help.\n");
-    calc_ui_display_calc(calc);
+    ui_display_calc(calc);
 
     bool keep_going = true;
     while(keep_going == true)
@@ -143,7 +145,7 @@ bool ui(void)
         switch(c)
         {
         case 'h':
-          calc_ui_display_help();
+          ui_display_help();
           break;
 
         case 'm':
@@ -173,7 +175,7 @@ bool ui(void)
         }
       }
 
-      calc_ui_display_calc(calc);
+      ui_display_calc(calc);
     }
   }
 

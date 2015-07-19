@@ -4,7 +4,7 @@
 - Basic implementation:
 
 - Bugs:
-  - "10 / 0 =" doesn't report an error.
+  - Exponentiation is broken due to adding the BCD class.
   - Switching between BCD and HEX is broken.
 
 - Enhanced implementation:
@@ -31,8 +31,6 @@
       time we get a new operator.
   - Should we disable 's' in Hex mode?  Or should we create a signed/unsigned
     option for Hex mode?
-  - Check to make sure we're deleting the operator and operand objects when
-    we're done with them in postfix.
 
 - Cleanup, refactoring, and beautification:
   - Change classes so you can say "stack this" instead of "stack *this".
@@ -44,7 +42,11 @@
   - Create extremely robust TDD-style tests for each class.
 
 - System Testing:
-  - Run a memory leak tool to check for leaks.
+  - Run a memory leak tool to check for leaks.  For example:
+    - Check to make sure we're deleting the operator and operand objects when
+      we're done with them in postfix.  Probably need to write a loop test that
+      will run overnight and check for memory leaks.  An alternative would be
+      to use a tool that looks for memory leaks.
   - Multi-platform testing.
   - Connect to Codeship.
 
