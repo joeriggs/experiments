@@ -600,23 +600,26 @@ calculator_add_char(calculator *this,
       }
     }
 
-    /* Operands. */
-    else if(operand_add_char_is_valid_operand(this->base, c) == true)
+    /* Operands and operators. */
+    else do
     {
-      do
+      /* Get the last token on the infix_list.  If it's an operand we might
+       * need to reuse or delete it later. */
+      void *cur_obj      = (void *) 0;
+      int   cur_obj_type = LIST_OBJ_TYPE_NONE;
+      list_get_tail(this->infix_list, &cur_obj, &cur_obj_type);
+
+      /* Operand. */
+      if(operand_add_char_is_valid_operand(this->base, c) == true)
       {
-        /* Get the last token on the infix_list.  If it's an operand, then we
-         * might want to use it to add to the current operand. */
-        void *obj = (void *) 0;
-        int type = LIST_OBJ_TYPE_NONE;
         operand *cur_operand = (operand *) 0;
-        if((list_get_tail(this->infix_list, &obj, &type) == true) && (type == LIST_OBJ_TYPE_OPERAND))
+        if((cur_obj != (void *) 0) && (cur_obj_type == LIST_OBJ_TYPE_OPERAND))
         {
           /* We already have an operand object.  Can we use it for this char? */
-          if(operand_add_char_allowed(obj) == true)
+          if(operand_add_char_allowed(cur_obj) == true)
           {
             /* Yes.  We're all set. */
-            cur_operand = (operand *) obj;
+            cur_operand = (operand *) cur_obj;
           }
 
           /* We have an operand object that we can't use for this char.  Delete
@@ -648,21 +651,38 @@ calculator_add_char(calculator *this,
 
         /* Okay, we have the correct operand object.  Add the character. */
         retcode = operand_add_char(cur_operand, c);
-      } while(0);
-    }
+      }
 
-    /* Operators. */
-    else if(operator_is_valid_operator(c) == true)
-    {
-      operator *cur_operator = operator_new(c);
-      if(cur_operator != (operator *) 0)
+      /* Operator. */
+      else if(operator_is_valid_operator(c) == true)
       {
-        if((retcode = list_add_tail(this->infix_list, cur_operator, LIST_OBJ_TYPE_OPERATOR)) == false)
+        operator *cur_operator = operator_new(c);
+        if(cur_operator != (operator *) 0)
         {
-          operator_delete(cur_operator);
+          /* If the result from the previous calculation is immediately ahead
+           * of us, and if this is an operator that doesn't require operands,
+           * then we need to throw the previous result away. */
+          if((cur_obj != (void *) 0) && (cur_obj_type == LIST_OBJ_TYPE_OPERAND) && (operand_add_char_allowed(cur_obj) == false))
+          {
+            operator_type op_type;
+            if(operator_get_op_type(cur_operator, &op_type) == false)
+            {
+              break;
+            }
+
+            if((op_type == op_type_none) && (list_del_tail(this->infix_list) == false))
+            {
+              break;
+            }
+          }
+
+          if((retcode = list_add_tail(this->infix_list, cur_operator, LIST_OBJ_TYPE_OPERATOR)) == false)
+          {
+            operator_delete(cur_operator);
+          }
         }
       }
-    }
+    } while(0);
   }
 
   return retcode;
@@ -758,20 +778,27 @@ calculator_test(void)
     const char *result;
   } calculator_test;
   calculator_test tests[] = {
-    { "",              true,  true,      "0"            }, // Empty equation.
-    { "1+2*3",         true,  true,      "7"            }, // Order of operations.
-    { "10+20*30",      true,  true,    "610"            }, // Order of operations.
-    { "10/0+20*30",   false, false,       ""            }, // Divide by zero.
-    { "(1+2)*3",       true,  true,      "9"            }, // Parentheses override order.
-    { "*3",            true,  true,     "27"            }, // Follow-on to the previous result.
-    { "7/10",          true,  true,      "0.7"          }, // int / int = float.
-    { "7.4/10",        true,  true,      "0.74"         }, // float / int.
-    { "2.5*2",         true,  true,      "5"            }, // float * int.
-    { "2^3",           true,  true,      "8"            }, // int ^ int.
-    { "2^3s",          true,  true,      "0.125000"     }, // int ^ -int.
-    { "2.34^5",        true,  true,     "70.1583371424" }, // float ^ int.
-    { "3^12.345",      true,  true, "776357.74428398"   }, // int ^ float.
-    { "2.34^5.678",    true,  true,    "124.8554885559" }, // float ^ float.
+    { "",                true,  true,       "0"            }, // Empty equation.
+    { "1+2*3",           true,  true,       "7"            }, // Order of operations.
+    { "10+20*30",        true,  true,     "610"            }, // Order of operations.
+    { "10/0+20*30",     false, false,        ""            }, // Divide by zero.
+    { "2*((5+5)/2)",     true,  true,      "10"            }, // Embedded parentheses.
+    { "(1+2)*3",         true,  true,       "9"            }, // Parentheses override order.
+    { "*3",              true,  true,      "27"            }, // Follow-on to the previous result.
+    { "7/10",            true,  true,       "0.7"          }, // int / int = float.
+    { "7.4/10",          true,  true,       "0.74"         }, // float / int.
+    { "2.5*2",           true,  true,       "5"            }, // float * int.
+    { "2^3",             true,  true,       "8"            }, // int ^ int.
+    { "2^3s",            true,  true,       "0.125000"     }, // int ^ -int.
+    { "2.34^5",          true,  true,      "70.1583371424" }, // float ^ int.
+    { "3^12.345",        true,  true, "776,357.74428398"   }, // int ^ float.
+    { "2.34^5.678",      true,  true,     "124.8554885559" }, // float ^ float.
+    { "(10+20)*(30+40", false, false,        ""            }, // Unbalanced parentheses.
+    { "5+(10)",          true,  true,      "15"            }, // Odd use of parentheses.
+    { "200+()*3",        true,  true,     "600"            }, // Odd use of parentheses.
+    { "11*)",           false, false,        ""            }, // Unablanced parentheses.
+    { "7*(2+9",         false, false,        ""            }, // Unablanced parentheses.
+
   };
   size_t calculator_test_size = (sizeof(tests) / sizeof(calculator_test));
 

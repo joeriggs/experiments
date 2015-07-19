@@ -605,12 +605,10 @@ bcd_to_str_decimal(significand_t *significand,
 {
   bool retcode = false;
 
-  /* We need a buffer that's big enough to hold the number, and the number
-   * has to fit within BCD_NUM_DIGITS digits. */
+  /* We need a buffer and a number that is <= BCD_NUM_DIGITS long. */
   int16_t max_exp = (BCD_NUM_DIGITS - 1);
   int16_t min_exp = (0 - max_exp);
-  if( (buf != (char *) 0) && (buf_size > BCD_NUM_DIGITS) &&
-      (exponent <= max_exp) && (exponent >= min_exp) )
+  if( (buf != (char *) 0) && (exponent <= max_exp) && (exponent >= min_exp) )
   {
     int buf_x = 0;
 
@@ -646,10 +644,11 @@ bcd_to_str_decimal(significand_t *significand,
        * 1. If (char_count > 0) (i.e. this was populated via bcd_add_char(),
        *    then (digit_count = char_count).
        *
-       * 2. max((exponent + 1), (num non-zero digits in the significand)).
-       *    2A. If exponent == 4, then there are at least 5 digits.
-       *    2B. If there are 10 non-zero digits in the significand, then there
-       *        are at least 10 digits.
+       * 2. max((exponent + 1), (non-zero digits)).
+       *    2A. (exponent + 1) is the minimum number of digits.  For example,
+       *        significand = 2000000000, exponent = 4, num = "20,000".
+       *    2B. (non-zero digits) are all displayed.  For example,
+       *        significand = 1234560000, exponent = 0, num = "1.23456".
        */
       int digit_count = char_count;
       if(digit_count == 0)
@@ -668,6 +667,12 @@ bcd_to_str_decimal(significand_t *significand,
 
         /* Insert the digit. */
         if(--buf_size == 0) { break; } else { buf[buf_x++] = (c | 0x30); }
+
+        /* Insert commas (base-1000). */
+        if((exponent > 0) && ((exponent % 3) == 0))
+        {
+          if(--buf_size == 0) { break; } else { buf[buf_x++] = ','; }
+        }
 
         /* Do we need a decimal point? */
         if((exponent-- == 0) && ((digit_count > 1) || (got_decimal_point == true)))
@@ -1688,6 +1693,7 @@ bcd_to_str(bcd  *this,
     int16_t exp = this->exponent;
     if((exp <= max_exp) && (exp >= min_exp))
     {
+      /* Regular notation (1,222,333). */
       retcode = bcd_to_str_decimal(&this->significand,
                                     this->exponent,
                                     this->char_count,
@@ -1696,9 +1702,9 @@ bcd_to_str(bcd  *this,
                                     buf,
                                     buf_size);
     }
-    /* Need to use scientific notation (1.234e18). */
     else
     {
+      /* Need to use scientific notation (1.234e18). */
       retcode = bcd_to_str_decimal(&this->significand,
                                     0,
                                     0,
@@ -1763,16 +1769,16 @@ bcd_test(void)
       significand_section_t test_sect = { 0xFFFFFFFF };
       for(j = 0; j < SIGNIFICAND_DIGITS_PER_SECTION; j++)
       {
-        if(bcd_sect_set_byte(&test_sect, j, (j + 1)) != true)        return false;
+        if(bcd_sect_set_byte(&test_sect, j, (j + 1)) != true)                                 return false;
       }
-      if(test_sect != 0x12345678)                                    return false;
+      if(test_sect != 0x12345678)                                                             return false;
       for(j = 0; j < SIGNIFICAND_DIGITS_PER_SECTION; j++)
       {
-        if(bcd_sect_get_byte(test_sect, j) != (j + 1))               return false;
+        if(bcd_sect_get_byte(test_sect, j) != (j + 1))                                        return false;
       }
       int arg2 = (SIGNIFICAND_DIGITS_PER_SECTION + 1);
-      if(bcd_sect_set_byte(&test_sect, arg2, 1) != false)            return false;
-      if(bcd_sect_get_byte(test_sect, arg2) != 0xF)                  return false;
+      if(bcd_sect_set_byte(&test_sect, arg2, 1) != false)                                     return false;
+      if(bcd_sect_get_byte(test_sect, arg2) != 0xF)                                           return false;
     }
 
     {
@@ -1781,30 +1787,30 @@ bcd_test(void)
       significand_t test_sig = { .s = { 0xFFFFFFFF } };
       for(j = 0; j < BCD_NUM_DIGITS; j++)
       {
-        if(bcd_sig_set_byte(&test_sig, j, (j + 1)) != true)          return false;
+        if(bcd_sig_set_byte(&test_sig, j, (j + 1)) != true)                                   return false;
       }
-      if(test_sig.s[0] != 0x12345678)                                return false;
-      if(test_sig.s[1] != 0x9ABCDEF0)                                return false;
+      if(test_sig.s[0] != 0x12345678)                                                         return false;
+      if(test_sig.s[1] != 0x9ABCDEF0)                                                         return false;
       for(j = 0; j < BCD_NUM_DIGITS; j++)
       {
-        if(bcd_sig_get_byte(&test_sig, j) != ((j + 1) & 0xF))        return false;
+        if(bcd_sig_get_byte(&test_sig, j) != ((j + 1) & 0xF))                                 return false;
       }
       int arg2 = (BCD_NUM_DIGITS + 1);
-      if(bcd_sig_set_byte(&test_sig, arg2, 1) != false)              return false;
-      if(bcd_sig_get_byte(&test_sig, arg2) != 0xF)                   return false;
+      if(bcd_sig_set_byte(&test_sig, arg2, 1) != false)                                       return false;
+      if(bcd_sig_get_byte(&test_sig, arg2) != 0xF)                                            return false;
     }
 
     {
       printf("  Sig Manipulation Tests.\n");
       significand_t sig1 = { .s = { 0x12345678, 0xFEDCBA98 } };
-      if((sig1.s[0] != 0x12345678) || (sig1.s[1] != 0xFEDCBA98))     return false;
-      if(bcd_shift_significand(&sig1, 3) != true)                    return false;
-      if((sig1.s[0] != 0x00012345) || (sig1.s[1] != 0x678FEDCB))     return false;
-      if(bcd_shift_significand(&sig1, -6) != true)                   return false;
-      if((sig1.s[0] != 0x45678FED) || (sig1.s[1] != 0xCB000000))     return false;
-      if(bcd_sig_is_zero(&sig1) != false)                            return false;
-      if(bcd_sig_initialize(&sig1) != true)                          return false;
-      if(bcd_sig_is_zero(&sig1) != true)                             return false;
+      if((sig1.s[0] != 0x12345678) || (sig1.s[1] != 0xFEDCBA98))                              return false;
+      if(bcd_shift_significand(&sig1, 3) != true)                                             return false;
+      if((sig1.s[0] != 0x00012345) || (sig1.s[1] != 0x678FEDCB))                              return false;
+      if(bcd_shift_significand(&sig1, -6) != true)                                            return false;
+      if((sig1.s[0] != 0x45678FED) || (sig1.s[1] != 0xCB000000))                              return false;
+      if(bcd_sig_is_zero(&sig1) != false)                                                     return false;
+      if(bcd_sig_initialize(&sig1) != true)                                                   return false;
+      if(bcd_sig_is_zero(&sig1) != true)                                                      return false;
     }
 
     {
@@ -1812,11 +1818,11 @@ bcd_test(void)
       significand_t sig1 = { .s = { 0x12345678, 0xFEDCBA98 } };
       significand_t sig2 = { .s = { 0xFEDABC78, 0xFE501234 } };
       significand_t mask = { .s = { 0x000000FF, 0xFF000000 } };
-      if(bcd_sig_cmp(&sig1,     0, &sig2,     0) != -1)              return false;
-      if(bcd_sig_cmp(&sig1, &mask, &sig2, &mask) !=  0)              return false;
-      if(bcd_sig_copy(&sig1, &sig2) != true)                         return false;
-      if((sig1.s[0] != 0x12345678) || (sig1.s[1] != 0xFEDCBA98))     return false;
-      if(bcd_sig_cmp(&sig1, 0, &sig2, 0) != 0)                       return false;
+      if(bcd_sig_cmp(&sig1,     0, &sig2,     0) != -1)                                       return false;
+      if(bcd_sig_cmp(&sig1, &mask, &sig2, &mask) !=  0)                                       return false;
+      if(bcd_sig_copy(&sig1, &sig2) != true)                                                  return false;
+      if((sig1.s[0] != 0x12345678) || (sig1.s[1] != 0xFEDCBA98))                              return false;
+      if(bcd_sig_cmp(&sig1, 0, &sig2, 0) != 0)                                                return false;
     }
   }
 #endif // TEST_PRIMITIVES
@@ -1831,20 +1837,21 @@ bcd_test(void)
     const char  *dst;
   } bcd_test;
   bcd_test tests[] = {
-    { "BCD_01",          ""                 ,         "0"                 }, // A blank object.
-    { "BCD_02",         "1"                 ,         "1"                 }, // A single-digit number (exp = 0).
-    { "BCD_03",       "123"                 ,       "123"                 }, // Simple integer value (exp > 0).
-    { "BCD_04",       "123."                ,       "123."                }, // User just entered a decimal point.
-    { "BCD_05",    "123000"                 ,    "123000"                 }, // Integer with trailing zeroes.
-    { "BCD_06", "000123000"                 ,    "123000"                 }, // Insignificant leading zeroes.
-    { "BCD_07",       "123.456"             ,       "123.456"             }, // Simple floating point value.
-    { "BCD_08",       "123.456000"          ,       "123.456000"          }, // Insignificant trailing zeroes.
-    { "BCD_09",       "123.456007"          ,       "123.456007"          }, // Significant zeroes in middle of the decimal.
-    { "BCD_10",       "000.000123"          ,         "0.000123"          }, // Insignificant and significant zeroes.
-    { "BCD_11",       "000.0123S"           ,        "-0.0123"            }, // Negative number.
-    { "BCD_12",          ".000000000000000" ,         "0.000000000000000" }, // No significant digit.
-    { "BCD_13",          ".000000000000001" ,         "0.000000000000001" }, // One significant digit.
-    { "BCD_14",          ".000123"          ,         "0.000123"          },
+    { "BCD_01",                ""                 ,                     "0"                 }, // A blank object.
+    { "BCD_02",               "1"                 ,                     "1"                 }, // A single-digit number (exp = 0).
+    { "BCD_03",             "123"                 ,                   "123"                 }, // Simple integer value (exp > 0).
+    { "BCD_04",             "123."                ,                   "123."                }, // User just entered a decimal point.
+    { "BCD_05",          "123000"                 ,               "123,000"                 }, // Integer with trailing zeroes.
+    { "BCD_06",       "000123000"                 ,               "123,000"                 }, // Insignificant leading zeroes.
+    { "BCD_07",             "123.456"             ,                   "123.456"             }, // Simple floating point value.
+    { "BCD_08",             "123.456000"          ,                   "123.456000"          }, // Insignificant trailing zeroes.
+    { "BCD_09",             "123.456007"          ,                   "123.456007"          }, // Significant zeroes in middle of the decimal.
+    { "BCD_10",             "000.000123"          ,                     "0.000123"          }, // Insignificant and significant zeroes.
+    { "BCD_11",             "000.0123S"           ,                    "-0.0123"            }, // Negative number.
+    { "BCD_12",                ".000000000000000" ,                     "0.000000000000000" }, // No significant digit.
+    { "BCD_13",                ".000000000000001" ,                     "0.000000000000001" }, // One significant digit.
+    { "BCD_14",                ".000123"          ,                     "0.000123"          },
+    { "BCD_15","1222333444555666"                 , "1,222,333,444,555,666"                 }, // Commas in the right place.
   };
   size_t bcd_test_size = (sizeof(tests) / sizeof(bcd_test));
 
@@ -1856,22 +1863,22 @@ bcd_test(void)
       printf("  %s: '%s'.\n", t->name, t->src);
 
       bcd *this = bcd_new();
-      if((retcode = (this != (bcd *) 0)) != true)                      return false;
+      if((retcode = (this != (bcd *) 0)) != true)                                             return false;
 
       const char *src = t->src;
       while(*src)
       {
-        if((retcode = bcd_add_char(this, *src++)) != true)             return false;
+        if((retcode = bcd_add_char(this, *src++)) != true)                                    return false;
       }
 
       char buf[1024];
       memset(buf, 0, sizeof(buf));
-      if((retcode = bcd_to_str(this, buf, sizeof(buf))) != true)       return false;
+      if((retcode = bcd_to_str(this, buf, sizeof(buf))) != true)                              return false;
 
       DBG_PRINT("strcmp(%s, %s)\n", t->dst, buf);
-      if((retcode = (strcmp(t->dst, buf) == 0)) != true)               return false;
+      if((retcode = (strcmp(t->dst, buf) == 0)) != true) { printf("%s != %s\n", t->dst, buf); return false; }
 
-      if((retcode = bcd_delete(this)) != true)                         return false;
+      if((retcode = bcd_delete(this)) != true)                                                return false;
       this = (bcd *) 0;
     }
   }
@@ -1887,89 +1894,89 @@ bcd_test(void)
     const char  *result;
   } bcd_math_test;
   bcd_math_test math_tests[] = {
-    { "BCD_ADD_01", bcd_op_add,                "1"                 ,                "2"                 ,                "3"                     }, // Debug
-    { "BCD_ADD_02", bcd_op_add,         "99999999"                 ,                "1"                 ,        "100000000"                     }, // 33-bits
-    { "BCD_ADD_03", bcd_op_add,        "999999999"                 ,                "1"                 ,       "1000000000"                     }, // Carry.
-    { "BCD_ADD_04", bcd_op_add, "1234567890123456"                 , "9876543210987654"                 ,                "1.111111110111111e+16" }, // 17 digits
-    { "BCD_ADD_05", bcd_op_add,                 ".1234567890123456", "9876543210987654"                 , "9876543210987654"                     }, // 16.0 + 0.16 digits.
-    { "BCD_ADD_06", bcd_op_add,             "1234s"                ,             "4321"                 ,             "3087"                     }, // 1st num neg.
-    { "BCD_ADD_07", bcd_op_add,             "8766"                 ,             "4321"                 ,            "13087"                     }, // Like previous, but pos.
-    { "BCD_ADD_08", bcd_op_add,              "123"                 ,             "1234"                 ,             "1357"                     }, // Pos + Pos.
-    { "BCD_ADD_09", bcd_op_add,              "456s"                ,              "123"                 ,             "-333"                     }, // Neg + Pos = Neg.
-    { "BCD_ADD_10", bcd_op_add,              "456s"                ,             "1234"                 ,              "778"                     }, // Neg + Pos = Pos.
-    { "BCD_ADD_11", bcd_op_add,              "789"                 ,             "1234s"                ,             "-445"                     }, // Pos + Neg = Neg.
-    { "BCD_ADD_12", bcd_op_add,              "789"                 ,              "123s"                ,              "666"                     }, // Pos + Neg = Pos.
-    { "BCD_ADD_13", bcd_op_add,              "202s"                ,             "1234s"                ,            "-1436"                     }, // Neg + Neg.
-    { "BCD_ADD_14", bcd_op_add,             "9990s"                ,             "1234s"                ,           "-11224"                     }, // Neg with carry.
-    { "BCD_ADD_15", bcd_op_add,               "10.5"               ,                 ".5"               ,               "11"                     }, // decimal to whole.
-    { "BCD_ADD_16", bcd_op_add,                 ".1111111111111111",                 ".1111111111111111",                "0.2222222222222222"    }, // No carry, no truncate.
-    { "BCD_ADD_17", bcd_op_add,             "1000"                 ,             "1000"                 ,             "2000"                     }, // Trailing zeroes.
-    { "BCD_ADD_18", bcd_op_add,                 ".00001"           ,                 ".00001"           ,                "0.00002"               }, // Significant zeroes.
-    { "BCD_ADD_19", bcd_op_add,                "1.0000134s"        ,                 ".045"             ,               "-0.9550134"             },
-    { "BCD_ADD_20", bcd_op_add, "9999999999999999"                 ,                "1"                 ,                "1e+16"                 }, // Overflow
-    { "BCD_ADD_21", bcd_op_add,         "99999999"                 ,                "1"                 ,        "100000000"                     }, // Carry up to next sect.
+    { "BCD_ADD_01", bcd_op_add,                "1"                 ,                "2"                 ,                     "3"                     }, // Debug
+    { "BCD_ADD_02", bcd_op_add,         "99999999"                 ,                "1"                 ,           "100,000,000"                     }, // 33-bits
+    { "BCD_ADD_03", bcd_op_add,        "999999999"                 ,                "1"                 ,         "1,000,000,000"                     }, // Carry.
+    { "BCD_ADD_04", bcd_op_add, "1234567890123456"                 , "9876543210987654"                 ,                     "1.111111110111111e+16" }, // 17 digits
+    { "BCD_ADD_05", bcd_op_add,                 ".1234567890123456", "9876543210987654"                 , "9,876,543,210,987,654"                     }, // 16.0 + 0.16 digits.
+    { "BCD_ADD_06", bcd_op_add,             "1234s"                ,             "4321"                 ,                 "3,087"                     }, // 1st num neg.
+    { "BCD_ADD_07", bcd_op_add,             "8766"                 ,             "4321"                 ,                "13,087"                     }, // Like previous, but pos.
+    { "BCD_ADD_08", bcd_op_add,              "123"                 ,             "1234"                 ,                 "1,357"                     }, // Pos + Pos.
+    { "BCD_ADD_09", bcd_op_add,              "456s"                ,              "123"                 ,                  "-333"                     }, // Neg + Pos = Neg.
+    { "BCD_ADD_10", bcd_op_add,              "456s"                ,             "1234"                 ,                   "778"                     }, // Neg + Pos = Pos.
+    { "BCD_ADD_11", bcd_op_add,              "789"                 ,             "1234s"                ,                  "-445"                     }, // Pos + Neg = Neg.
+    { "BCD_ADD_12", bcd_op_add,              "789"                 ,              "123s"                ,                   "666"                     }, // Pos + Neg = Pos.
+    { "BCD_ADD_13", bcd_op_add,              "202s"                ,             "1234s"                ,                "-1,436"                     }, // Neg + Neg.
+    { "BCD_ADD_14", bcd_op_add,             "9990s"                ,             "1234s"                ,               "-11,224"                     }, // Neg with carry.
+    { "BCD_ADD_15", bcd_op_add,               "10.5"               ,                 ".5"               ,                    "11"                     }, // decimal to whole.
+    { "BCD_ADD_16", bcd_op_add,                 ".1111111111111111",                 ".1111111111111111",                     "0.2222222222222222"    }, // No carry, no truncate.
+    { "BCD_ADD_17", bcd_op_add,             "1000"                 ,             "1000"                 ,                 "2,000"                     }, // Trailing zeroes.
+    { "BCD_ADD_18", bcd_op_add,                 ".00001"           ,                 ".00001"           ,                     "0.00002"               }, // Significant zeroes.
+    { "BCD_ADD_19", bcd_op_add,                "1.0000134s"        ,                 ".045"             ,                    "-0.9550134"             },
+    { "BCD_ADD_20", bcd_op_add, "9999999999999999"                 ,                "1"                 ,                     "1e+16"                 }, // Overflow
+    { "BCD_ADD_21", bcd_op_add,         "99999999"                 ,                "1"                 ,           "100,000,000"                     }, // Carry up to next sect.
 
-    { "BCD_SUB_01", bcd_op_sub,                "5"                 ,                "2"                 ,                "3"                     }, // Debug.
-    { "BCD_SUB_02", bcd_op_sub,                "0"                 ,                "1"                 ,               "-1"                     }, // Neg num.
-    { "BCD_SUB_03", bcd_op_sub,            "12345"                 ,             "1234"                 ,            "11111"                     }, // Pos - Pos = Pos.
-    { "BCD_SUB_04", bcd_op_sub,            "54321"                 ,            "91234"                 ,           "-36913"                     }, // Pos - Pos = Neg.
-    { "BCD_SUB_05", bcd_op_sub,            "12345"                 ,              "123.4s"              ,            "12468.4"                   }, // Pos - Neg = Pos.
-    { "BCD_SUB_06", bcd_op_sub,              "432.1s"              ,                "7.5678"            ,             "-439.6678"                }, // Neg - Pos = Neg.
-    { "BCD_SUB_07", bcd_op_sub,             "1225s"                ,               "34.95s"             ,            "-1190.05"                  }, // Neg - Neg = Neg.
-    { "BCD_SUB_08", bcd_op_sub, "1111111111111111s"                , "1234567890123456s"                ,  "123456779012345"                     }, // Neg - Neg = Pos.
+    { "BCD_SUB_01", bcd_op_sub,                "5"                 ,                "2"                 ,                     "3"                     }, // Debug.
+    { "BCD_SUB_02", bcd_op_sub,                "0"                 ,                "1"                 ,                    "-1"                     }, // Neg num.
+    { "BCD_SUB_03", bcd_op_sub,            "12345"                 ,             "1234"                 ,                "11,111"                     }, // Pos - Pos = Pos.
+    { "BCD_SUB_04", bcd_op_sub,            "54321"                 ,            "91234"                 ,               "-36,913"                     }, // Pos - Pos = Neg.
+    { "BCD_SUB_05", bcd_op_sub,            "12345"                 ,              "123.4s"              ,                "12,468.4"                   }, // Pos - Neg = Pos.
+    { "BCD_SUB_06", bcd_op_sub,              "432.1s"              ,                "7.5678"            ,                  "-439.6678"                }, // Neg - Pos = Neg.
+    { "BCD_SUB_07", bcd_op_sub,             "1225s"                ,               "34.95s"             ,                "-1,190.05"                  }, // Neg - Neg = Neg.
+    { "BCD_SUB_08", bcd_op_sub, "1111111111111111s"                , "1234567890123456s"                ,   "123,456,779,012,345"                     }, // Neg - Neg = Pos.
 
-    { "BCD_MUL_01", bcd_op_mul,                "3"                 ,                "2"                 ,                "6"                     }, // Debug.
-    { "BCD_MUL_02", bcd_op_mul,             "4567"                 ,            "56789"                 ,        "259355363"                     }, // Lots of carry.
-    { "BCD_MUL_03", bcd_op_mul,                "1"                 ,                "0"                 ,                "0"                     }, // Non-0 * 0 = 0.
-    { "BCD_MUL_04", bcd_op_mul,                "0"                 ,                "8"                 ,                "0"                     }, // 0 * Non-0 = 0.
-    { "BCD_MUL_05", bcd_op_mul,            "87878"                 ,             "4539.123"             ,        "398889050.994"                 }, // Pos * Pos = Pos.
-    { "BCD_MUL_06", bcd_op_mul,            "13579.2468"            ,                 ".8579s"           ,           "-11649.63582972"            }, // Pos * Neg = Neg.
-    { "BCD_MUL_07", bcd_op_mul,                "1.0000134s"        ,                 ".045"             ,               "-0.045000603"           }, // Neg * Pos = Neg.
-    { "BCD_MUL_08", bcd_op_mul,       "5579421358s"                ,               "42s"                ,     "234335697036"                     }, // Neg * Neg = Pos.
-    { "BCD_MUL_09", bcd_op_mul,               "13.57900000"        ,             "8700.0000"            ,          "118137.3"                    }, // Insignificant zeroes.
-    { "BCD_MUL_10", bcd_op_mul, "9999999999999999"                 ,                "9"                 ,                "8.999999999999999e+16" }, // Very large numbers. 
-    { "BCD_MUL_11", bcd_op_mul, "9999999999999999"                 ,               "99"                 ,                "9.899999999999999e+17" },
-    { "BCD_MUL_12", bcd_op_mul, "9999999999999999"                 ,              "999"                 ,                "9.989999999999999e+18" },
-    { "BCD_MUL_13", bcd_op_mul, "9999999999999999"                 ,             "9999"                 ,                "9.998999999999999e+19" },
-    { "BCD_MUL_14", bcd_op_mul, "9999999999999999"                 ,            "99999"                 ,                "9.999899999999999e+20" },
-    { "BCD_MUL_15", bcd_op_mul, "9999999999999999"                 ,           "999999"                 ,                "9.999989999999999e+21" },
-    { "BCD_MUL_16", bcd_op_mul, "9999999999999999"                 ,          "9999999"                 ,                "9.999998999999999e+22" },
-    { "BCD_MUL_17", bcd_op_mul, "9999999999999999"                 ,         "99999999"                 ,                "9.999999899999999e+23" },
-    { "BCD_MUL_18", bcd_op_mul, "9999999999999999"                 ,        "999999999"                 ,                "9.999999989999999e+24" },
-    { "BCD_MUL_19", bcd_op_mul, "9999999999999999"                 ,       "9999999999"                 ,                "9.999999998999999e+25" },
-    { "BCD_MUL_20", bcd_op_mul, "9999999999999999"                 ,      "99999999999"                 ,                "9.999999999899999e+26" },
-    { "BCD_MUL_21", bcd_op_mul, "9999999999999999"                 ,     "999999999999"                 ,                "9.999999999989999e+27" },
-    { "BCD_MUL_22", bcd_op_mul, "9999999999999999"                 ,    "9999999999999"                 ,                "9.999999999998999e+28" },
-    { "BCD_MUL_23", bcd_op_mul, "9999999999999999"                 ,   "99999999999999"                 ,                "9.999999999999899e+29" },
-    { "BCD_MUL_24", bcd_op_mul, "9999999999999999"                 ,  "999999999999999"                 ,                "9.999999999999989e+30" },
-    { "BCD_MUL_25", bcd_op_mul, "9999999999999999"                 , "9999999999999999"                 ,                "9.999999999999998e+31" },
-    { "BCD_MUL_26", bcd_op_mul,                 ".000000000000001" ,                 ".000000000000001" ,                "1e-30"                 }, // Very small numbers.
-    { "BCD_MUL_27", bcd_op_mul,                 ".5"               ,                 ".2"               ,                "0.1"                   }, // Insig zeroes in result.
-    { "BCD_MUL_28", bcd_op_mul,               "75"                 ,               "28.2"               ,             "2115"                     }, // Whole * Fract = Whole.
-    { "BCD_MUL_29", bcd_op_mul,              "428.225"             ,              "311"                 ,           "133177.975"                 }, // Whole * Fract = Fract.
-    { "BCD_MUL_30", bcd_op_mul,            "30000"                 ,              "200"                 ,          "6000000"                     }, // Many trailing zeroes.
-    { "BCD_MUL_31", bcd_op_mul,                 ".009"             ,                 ".009"             ,                "0.000081"              }, // Irrelevent carry.
-    { "BCD_MUL_32", bcd_op_mul,                "9"                 ,                "9"                 ,               "81"                     }, // Irrelevent carry.
-    { "BCD_MUL_33", bcd_op_mul,              "370"                 ,                "3"                 ,             "1110"                     }, // Math test.
-    { "BCD_MUL_34", bcd_op_mul,              "370"                 ,                "6"                 ,             "2220"                     }, // Math test.
-    { "BCD_MUL_35", bcd_op_mul,              "370"                 ,                "9"                 ,             "3330"                     }, // Math test.
-    { "BCD_MUL_36", bcd_op_mul,              "370"                 ,               "12"                 ,             "4440"                     }, // Math test.
+    { "BCD_MUL_01", bcd_op_mul,                "3"                 ,                "2"                 ,                     "6"                     }, // Debug.
+    { "BCD_MUL_02", bcd_op_mul,             "4567"                 ,            "56789"                 ,           "259,355,363"                     }, // Lots of carry.
+    { "BCD_MUL_03", bcd_op_mul,                "1"                 ,                "0"                 ,                     "0"                     }, // Non-0 * 0 = 0.
+    { "BCD_MUL_04", bcd_op_mul,                "0"                 ,                "8"                 ,                     "0"                     }, // 0 * Non-0 = 0.
+    { "BCD_MUL_05", bcd_op_mul,            "87878"                 ,             "4539.123"             ,       "398,889,050.994"                     }, // Pos * Pos = Pos.
+    { "BCD_MUL_06", bcd_op_mul,            "13579.2468"            ,                 ".8579s"           ,               "-11,649.63582972"            }, // Pos * Neg = Neg.
+    { "BCD_MUL_07", bcd_op_mul,                "1.0000134s"        ,                 ".045"             ,                    "-0.045000603"           }, // Neg * Pos = Neg.
+    { "BCD_MUL_08", bcd_op_mul,       "5579421358s"                ,               "42s"                ,       "234,335,697,036"                     }, // Neg * Neg = Pos.
+    { "BCD_MUL_09", bcd_op_mul,               "13.57900000"        ,             "8700.0000"            ,               "118,137.3"                   }, // Insignificant zeroes.
+    { "BCD_MUL_10", bcd_op_mul, "9999999999999999"                 ,                "9"                 ,                     "8.999999999999999e+16" }, // Very large numbers. 
+    { "BCD_MUL_11", bcd_op_mul, "9999999999999999"                 ,               "99"                 ,                     "9.899999999999999e+17" },
+    { "BCD_MUL_12", bcd_op_mul, "9999999999999999"                 ,              "999"                 ,                     "9.989999999999999e+18" },
+    { "BCD_MUL_13", bcd_op_mul, "9999999999999999"                 ,             "9999"                 ,                     "9.998999999999999e+19" },
+    { "BCD_MUL_14", bcd_op_mul, "9999999999999999"                 ,            "99999"                 ,                     "9.999899999999999e+20" },
+    { "BCD_MUL_15", bcd_op_mul, "9999999999999999"                 ,           "999999"                 ,                     "9.999989999999999e+21" },
+    { "BCD_MUL_16", bcd_op_mul, "9999999999999999"                 ,          "9999999"                 ,                     "9.999998999999999e+22" },
+    { "BCD_MUL_17", bcd_op_mul, "9999999999999999"                 ,         "99999999"                 ,                     "9.999999899999999e+23" },
+    { "BCD_MUL_18", bcd_op_mul, "9999999999999999"                 ,        "999999999"                 ,                     "9.999999989999999e+24" },
+    { "BCD_MUL_19", bcd_op_mul, "9999999999999999"                 ,       "9999999999"                 ,                     "9.999999998999999e+25" },
+    { "BCD_MUL_20", bcd_op_mul, "9999999999999999"                 ,      "99999999999"                 ,                     "9.999999999899999e+26" },
+    { "BCD_MUL_21", bcd_op_mul, "9999999999999999"                 ,     "999999999999"                 ,                     "9.999999999989999e+27" },
+    { "BCD_MUL_22", bcd_op_mul, "9999999999999999"                 ,    "9999999999999"                 ,                     "9.999999999998999e+28" },
+    { "BCD_MUL_23", bcd_op_mul, "9999999999999999"                 ,   "99999999999999"                 ,                     "9.999999999999899e+29" },
+    { "BCD_MUL_24", bcd_op_mul, "9999999999999999"                 ,  "999999999999999"                 ,                     "9.999999999999989e+30" },
+    { "BCD_MUL_25", bcd_op_mul, "9999999999999999"                 , "9999999999999999"                 ,                     "9.999999999999998e+31" },
+    { "BCD_MUL_26", bcd_op_mul,                 ".000000000000001" ,                 ".000000000000001" ,                     "1e-30"                 }, // Very small numbers.
+    { "BCD_MUL_27", bcd_op_mul,                 ".5"               ,                 ".2"               ,                     "0.1"                   }, // Insig zeroes in result.
+    { "BCD_MUL_28", bcd_op_mul,               "75"                 ,               "28.2"               ,                 "2,115"                     }, // Whole * Fract = Whole.
+    { "BCD_MUL_29", bcd_op_mul,              "428.225"             ,              "311"                 ,               "133,177.975"                 }, // Whole * Fract = Fract.
+    { "BCD_MUL_30", bcd_op_mul,            "30000"                 ,              "200"                 ,             "6,000,000"                     }, // Many trailing zeroes.
+    { "BCD_MUL_31", bcd_op_mul,                 ".009"             ,                 ".009"             ,                     "0.000081"              }, // Irrelevent carry.
+    { "BCD_MUL_32", bcd_op_mul,                "9"                 ,                "9"                 ,                    "81"                     }, // Irrelevent carry.
+    { "BCD_MUL_33", bcd_op_mul,              "370"                 ,                "3"                 ,                 "1,110"                     }, // Math test.
+    { "BCD_MUL_34", bcd_op_mul,              "370"                 ,                "6"                 ,                 "2,220"                     }, // Math test.
+    { "BCD_MUL_35", bcd_op_mul,              "370"                 ,                "9"                 ,                 "3,330"                     }, // Math test.
+    { "BCD_MUL_36", bcd_op_mul,              "370"                 ,               "12"                 ,                 "4,440"                     }, // Math test.
 
-    { "BCD_DIV_01", bcd_op_div,                "6"                 ,                "2"                 ,                "3"                     }, // Simple div.
-    { "BCD_DIV_02", bcd_op_div,              "246"                 ,                "3"                 ,               "82"                     }, // Slightly fancier.
-    { "BCD_DIV_03", bcd_op_div, "1234567890123456"                 ,               "32"                 ,   "38580246566358"                     }, // Slightly fancier.
-    { "BCD_DIV_04", bcd_op_div,             "7890"                 ,             "3210"                 ,                "2.457943925233645"     }, // Pos / Pos
-    { "BCD_DIV_05", bcd_op_div,             "1234"                 ,               "32s"                ,              "-38.5625"                }, // Pos / Neg
-    { "BCD_DIV_06", bcd_op_div,            "97531s"                ,              "132"                 ,             "-738.8712121212121"       }, // Neg / Pos
-    { "BCD_DIV_07", bcd_op_div,       "2468013579s"                ,               "32s"                ,         "77125424.34375"               }, // Neg / Neg
-    { "BCD_DIV_08", bcd_op_div, "9999999999999999"                 ,                 ".00234"           ,                "4.273504273504273e+18" }, // Whole / <1
-    { "BCD_DIV_09", bcd_op_div,                 ".45832"           ,               "32s"                ,               "-0.0143225"             }, // <1 / Whole
-    { "BCD_DIV_10", bcd_op_div, "9999999999999999"                 ,                 ".000000000000001" ,                "9.999999999999999e+30" }, // Lrg / Sml
-    { "BCD_DIV_11", bcd_op_div,                 ".000000000000001" , "9999999999999999"                 ,                "1e-31"                 }, // Sml / Lrg
-    { "BCD_DIV_12", bcd_op_div,      "8745963210"                  ,              "101"                 ,         "86593695.14851485"            }, //
-    { "BCD_DIV_13", bcd_op_div,              "22"                  ,                "7"                 ,                "3.142857142857143"     }, // Pi-ish
-    { "BCD_DIV_14", bcd_op_div,               "2"                  ,                "1.414213562373095" ,                "1.414213562373095"     }, // Square root of 2.
-    { "BCD_DIV_15", bcd_op_div, "9999999999999999"                 , "7777777777777777"                 ,                "1.285714285714286"     }, // 16 / 16 = 16 digits.
+    { "BCD_DIV_01", bcd_op_div,                "6"                 ,                "2"                 ,                     "3"                     }, // Simple div.
+    { "BCD_DIV_02", bcd_op_div,              "246"                 ,                "3"                 ,                    "82"                     }, // Slightly fancier.
+    { "BCD_DIV_03", bcd_op_div, "1234567890123456"                 ,               "32"                 ,    "38,580,246,566,358"                     }, // Slightly fancier.
+    { "BCD_DIV_04", bcd_op_div,             "7890"                 ,             "3210"                 ,                     "2.457943925233645"     }, // Pos / Pos
+    { "BCD_DIV_05", bcd_op_div,             "1234"                 ,               "32s"                ,                   "-38.5625"                }, // Pos / Neg
+    { "BCD_DIV_06", bcd_op_div,            "97531s"                ,              "132"                 ,                  "-738.8712121212121"       }, // Neg / Pos
+    { "BCD_DIV_07", bcd_op_div,       "2468013579s"                ,               "32s"                ,            "77,125,424.34375"               }, // Neg / Neg
+    { "BCD_DIV_08", bcd_op_div, "9999999999999999"                 ,                 ".00234"           ,                     "4.273504273504273e+18" }, // Whole / <1
+    { "BCD_DIV_09", bcd_op_div,                 ".45832"           ,               "32s"                ,                    "-0.0143225"             }, // <1 / Whole
+    { "BCD_DIV_10", bcd_op_div, "9999999999999999"                 ,                 ".000000000000001" ,                     "9.999999999999999e+30" }, // Lrg / Sml
+    { "BCD_DIV_11", bcd_op_div,                 ".000000000000001" , "9999999999999999"                 ,                     "1e-31"                 }, // Sml / Lrg
+    { "BCD_DIV_12", bcd_op_div,      "8745963210"                  ,              "101"                 ,            "86,593,695.14851485"            }, //
+    { "BCD_DIV_13", bcd_op_div,              "22"                  ,                "7"                 ,                     "3.142857142857143"     }, // Pi-ish
+    { "BCD_DIV_14", bcd_op_div,               "2"                  ,                "1.414213562373095" ,                     "1.414213562373095"     }, // Square root of 2.
+    { "BCD_DIV_15", bcd_op_div, "9999999999999999"                 , "7777777777777777"                 ,                     "1.285714285714286"     }, // 16 / 16 = 16 digits.
   };
   size_t bcd_math_test_size = (sizeof(math_tests) / sizeof(bcd_math_test));
 
@@ -1983,24 +1990,24 @@ bcd_test(void)
       printf("  %s: %s %s\n", t->name, val1, val2);
 
       bcd *obj1 = bcd_new();
-      if((retcode = (obj1 != (bcd *) 0)) != true)                      return false;
+      if((retcode = (obj1 != (bcd *) 0)) != true)                                             return false;
       while(*val1)
       {
-        if((retcode = bcd_add_char(obj1, *val1++)) != true)            return false;
+        if((retcode = bcd_add_char(obj1, *val1++)) != true)                                   return false;
       }
 
       bcd *obj2 = bcd_new();
-      if((retcode = (obj2 != (bcd *) 0)) != true)                      return false;
+      if((retcode = (obj2 != (bcd *) 0)) != true)                                             return false;
       while(*val2)
       {
-        if((retcode = bcd_add_char(obj2, *val2++)) != true)            return false;
+        if((retcode = bcd_add_char(obj2, *val2++)) != true)                                   return false;
       }
 
-      if((retcode = t->func(obj1, obj2)) != true)                      return false;
+      if((retcode = t->func(obj1, obj2)) != true)                                             return false;
     
       char buf[1024];
       memset(buf, 0, sizeof(buf));
-      if((retcode = bcd_to_str(obj1, buf, sizeof(buf))) != true)       return false;
+      if((retcode = bcd_to_str(obj1, buf, sizeof(buf))) != true)                              return false;
 
       if((retcode = (strcmp(t->result, buf) == 0)) != true)
       {
@@ -2008,8 +2015,8 @@ bcd_test(void)
         return false;
       }
 
-      if((retcode = bcd_delete(obj1)) != true)                         return false;
-      if((retcode = bcd_delete(obj2)) != true)                         return false;
+      if((retcode = bcd_delete(obj1)) != true)                                                return false;
+      if((retcode = bcd_delete(obj2)) != true)                                                return false;
     }
   }
 #endif // TEST_MATH_OPERATIONS
@@ -2022,34 +2029,34 @@ bcd_test(void)
 
     printf("Divide by zero test.\n");
     bcd *o1 = bcd_new(), *o2 = bcd_new();
-    if(bcd_sig_initialize(&o1->significand) != true)                    return false;
-    if(bcd_sig_initialize(&o2->significand) != true)                    return false;
-    if(bcd_sig_set_byte(&o1->significand, 0, 1) != true)                return false;
+    if(bcd_sig_initialize(&o1->significand) != true)                                          return false;
+    if(bcd_sig_initialize(&o2->significand) != true)                                          return false;
+    if(bcd_sig_set_byte(&o1->significand, 0, 1) != true)                                      return false;
     o1->exponent = 1; o1->got_decimal_point = 0; o1->sign = 0;
     o2->exponent = 1; o2->got_decimal_point = 0; o2->sign = 0;
-    if(bcd_op_div(o1, o2) != false)                                     return false;
+    if(bcd_op_div(o1, o2) != false)                                                           return false;
 
     printf("Mul very large and very small numbers.\n");
     int x;
     for(x = 0; x < BCD_NUM_DIGITS; x++) 
     {
-      if(bcd_sig_set_byte(&o1->significand, x, 9) != true)              return false;
+      if(bcd_sig_set_byte(&o1->significand, x, 9) != true)                                    return false;
     }
-    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                return false;
+    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                                      return false;
     o1->exponent = 15; o1->got_decimal_point = 0; o1->sign = 0;
     o2->exponent =  2; o2->got_decimal_point = 0; o2->sign = 0;
-    if(bcd_op_mul(o1, o2) != true)                                      return false;
+    if(bcd_op_mul(o1, o2) != true)                                                            return false;
     memset(buf, 0, sizeof(buf));
-    if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)            return false;
-    if((retcode = (strcmp("9.999999999999999e+17", buf) == 0)) != true) return false;
+    if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)                                  return false;
+    if((retcode = (strcmp("9.999999999999999e+17", buf) == 0)) != true)                       return false;
 
     printf("Now add a very small number.\n");
-    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                return false;
+    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                                      return false;
     o2->exponent =  1; o2->got_decimal_point = 0; o2->sign = 0;
-    if(bcd_op_add(o1, o2) != true)                                      return false;
+    if(bcd_op_add(o1, o2) != true)                                                            return false;
     memset(buf, 0, sizeof(buf));
-    if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)           return false;
-    if((retcode = (strcmp("9.999999999999999e+17", buf) == 0)) != true) return false;
+    if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)                                  return false;
+    if((retcode = (strcmp("9.999999999999999e+17", buf) == 0)) != true)                       return false;
     bcd_delete(o1); bcd_delete(o2);
   }
 #endif // TEST_SPECIAL
