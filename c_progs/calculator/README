@@ -17,15 +17,15 @@ The class heirarchy looks like this:
    -------------  --------------------------------------------------------
   |  raw_stdin  ||                       calculator                       |
    -------------  --------------------------------------------------------
-                  ------------  ------------  ------------  ------------
-                 |    list    ||   operand  ||  operator  ||    stack   |
-                  ------------  ------------  ------------  ------------
-                                ------   ---
-                               |fp_exp| | b |
-                                ------  | c |
-                                --------  d |
-                               |     bcd    |
-                                ------------
+                  --------  ------------------  ------------  ------------
+                 |  list  ||      operand     ||  operator  ||    stack   |
+                  --------  ------------------  ------------  ------------
+                            ------  ---    ---
+                           |fp_exp|| b |  |hex|
+                            ------ | c |   ---
+                            -------  d |
+                           |     bcd   |
+                            -----------
 
   * main() provides the text-based user interface.  If you want to replace the
     text-based user interface with something more sophisticated, then you will
@@ -53,6 +53,9 @@ The class heirarchy looks like this:
       * bcd provides a binary coded decimal (bcd) data representation that
         allows the calculator to do decimal math without running into problems
         caused by IEEE 754 float or double issues.
+
+      * hex provides a hexadecimal data representation that allows the
+        calculator to do hex math and bit manipulation operations.
 
     * operator is used to store each operator.  It contains members that know
       how to execute the steps necessary to perform the operator.
