@@ -6,9 +6,11 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
+#include <string.h>
 
 #include "common.h"
 
+#include "bcd.h"
 #include "fp_exp.h"
 
 /******************************************************************************
@@ -17,9 +19,9 @@
 
 /* This is the fp_exp class. */
 struct fp_exp {
-  double base;
-  double exp;
-  double result;
+  bcd *base;
+  bcd *exp;
+  bcd *result;
 
   /* We often need to convert exp to a fraction.  It is stored here. */
   uint64_t exp_numerator;
@@ -31,50 +33,53 @@ struct fp_exp {
  *****************************************************************************/
 
 /* Perform an exponentiation with a floating point base and an integer exponent.
- * We've already determined this->exp is a whole number, so we can do simple
- * exponent math.  We will calculate (this->base^this->exp).
  *
  * Note that we aren't using the base and exp that are stored in an fp_exp
- * object.  This method just provides a utility service that are needed to
+ * object.  This method just provides a utility service that is needed to
  * calculate the actual exponent.
  *
  * Input:
- *   base = The base.
+ *   base   = The floating point base.
  *
- *   exp  = The exponent.  Currently only supports positive exponents.
+ *   exp    = The exponent.  Currently only supports positive exponents.
+ *
+ *   result = A point to the bcd object that will receive the result.
  *
  * Output:
  *   Returns the result.
  */
-static double
-fp_exp_integer_exp(double       base,
-                        int          exp)
+static bool
+fp_exp_integer_exp(bcd *base,
+                   int  exp,
+                   bcd *result)
 {
-  double result = 0.0;
+  bool retcode = false;
 
-  /* base^0 = 1.0 */
+  /* base^0 = 1. */
   if(exp == 0)
   {
-    result = 1.0;
+    retcode = bcd_import(result, 1);
   }
 
   /* base^1 = base */
   else if(exp == 1)
   {
-    result = base;
+    retcode = bcd_copy(base, result);
   }
 
   /* All others must be calculated. */
   else
   {
-    result = base;
-    while(--exp > 0)
+    if((retcode = bcd_copy(base, result)) == true)
     {
-      result *= base;
+      while((--exp > 0) && (retcode == true))
+      {
+        retcode = bcd_op_mul(result, base);
+      }
     }
   }
 
-  return result;
+  return retcode;
 }
 
 
@@ -98,22 +103,43 @@ fp_exp_to_fraction(fp_exp *this)
 {
   bool retcode = false;
 
-  if(this != (fp_exp *) 0)
+  /* We'll use these inside a loop, then we'll delete them when we're done. */
+  bcd *ten    = (bcd *) 0;
+  bcd *root   = (bcd *) 0;
+  bcd *tmp_f1 = (bcd *) 0;
+  bcd *tmp_f2 = (bcd *) 0;
+
+  do
   {
+    if(this == (fp_exp *) 0)                                       { break; }
+
+    if((ten    = bcd_new()) == (bcd *) 0)                          { break; }
+    if((root   = bcd_new()) == (bcd *) 0)                          { break; }
+    if((tmp_f1 = bcd_new()) == (bcd *) 0)                          { break; }
+    if((tmp_f2 = bcd_new()) == (bcd *) 0)                          { break; }
+
+    if(bcd_import(ten, 10) == false)                               { break; }
+
     /* Convert the exponent to a fraction (numerator and denominator), and then
      * reduce the fraction.
      */
     int loop;
     for(loop = 1; loop < 20; loop++)
     {
-      double root = fp_exp_integer_exp(10.0, loop);
-      double tmp_f1 = this->exp * root;
-      int64_t tmp_i = (int64_t) tmp_f1;
-      double tmp_f2 = (double) tmp_i;
-      if(tmp_f1 == tmp_f2)
+      if((retcode = fp_exp_integer_exp(ten, loop, root)) == false) { break; }
+
+      if(bcd_copy(this->exp, tmp_f1) == false)                     { break; }
+      if((retcode = bcd_op_mul(tmp_f1, root)) == false)            { break; }
+
+      int64_t tmp_i;
+      if(bcd_export(tmp_f1, &tmp_i) == false)                      { break; }
+      if(bcd_import(tmp_f2, tmp_i) == false)                       { break; }
+
+      if(bcd_cmp(tmp_f1, tmp_f2) == 0)
       {
-        this->exp_numerator   = tmp_i;
-        this->exp_denominator = root;
+        this->exp_numerator = tmp_i;
+        if(bcd_export(root, &tmp_i) == false)                      { break; }
+        this->exp_denominator = tmp_i;
         retcode = true;
         break;
       }
@@ -159,13 +185,17 @@ fp_exp_to_fraction(fp_exp *this)
       DBG_PRINT("%s(AFT): this->exp_numerator %lld: this->exp_denominator %lld\n",
                   __func__, this->exp_numerator, this->exp_denominator);
     }
-  }
+  } while(0);
+
+  bcd_delete(tmp_f2);
+  bcd_delete(tmp_f1);
+  bcd_delete(root);
+  bcd_delete(ten);
 
   return retcode;
 }
 
-/* This is a very fast-converging nth root algorithm for finding the nth root
- * of A.
+/* This is a very fast-converging nth root algorithm to find the nth root of A.
  *
  * Taken from http://en.wikipedia.org/wiki/Nth_root_algorithm
  *
@@ -180,47 +210,109 @@ fp_exp_to_fraction(fp_exp *this)
  *      |Delta X_k| < Epsilon.
  *
  * Input:
- *   this = A pointer to the fp_exp object.  In this member, the variables
- *          are as follows:
- *          A   = this->base
- *          n   = this->exp_denominator
- *          X_k = guess
+ *   this  = A pointer to the fp_exp object.  In this member, the variables
+ *           are as follows:
+ *           A   = this->base
+ *           n   = this->exp_denominator
+ *
+ *   guess = A pointer to a bcd object that will receive the guess.
+ *           X_k = guess
  *
  * Output:
- *   Returns the guess.
+ *   true  = success.  *guess contains the guess.
+ *   false = failure.  The contents of *guess is undefined.
  */
-static double
-fp_exp_nth_root_guess(fp_exp *this)
+static bool
+fp_exp_nth_root_guess(fp_exp *this,
+                      bcd    *guess)
 {
-  double   A   = this->base;
-  uint64_t n   = this->exp_denominator;
-  DBG_PRINT("%s(): A %f: n %lld\n", __func__, A, n);
-  double X_k = 2;
+  bool retcode = false;
 
-  /* Solve the nth root (see description above). */
-  int x;
-  for(x = 0; x < 1000; x++)
+  bcd *A         = (bcd *) 0;
+  bcd *n_f       = (bcd *) 0;
+  bcd *X_k       = (bcd *) 0;
+  bcd *part1     = (bcd *) 0;
+  bcd *part2     = (bcd *) 0;
+  bcd *part3     = (bcd *) 0;
+  bcd *part4     = (bcd *) 0;
+  bcd *delta_X_k = (bcd *) 0;
+  bcd *zero      = (bcd *) 0;
+
+  do
   {
-    /*                       --------PART__4--------
-     *                       -----PART__3----
-     *             PART__1         -PART__2-
-     * Delta X_k = (1 / n) * ((A / X_k^(n-1)) - X_k); X_k+1 = X_k + Delta X_k.
-     */
-    double part1 = 1.0 / n;
-    double part2 = fp_exp_integer_exp(X_k, (n - 1));
-    double part3 = A / part2;
-    double part4 = part3 - X_k;
-    double delta_X_k = part1 * part4;
-    if(delta_X_k == 0.0)
-    {
-      break;
-    }
-    X_k += delta_X_k;
-  }
-  DBG_PRINT("%s(): x %d: this->base %f: this->exp_denominator %lld: X_k %10.15f\n",
-             __func__, x, this->base, this->exp_denominator, X_k);
+    if((A = bcd_new()) == (bcd *) 0)                           { break; }
+    if(bcd_copy(this->base, A) == false)                       { break; }
 
-  return X_k;
+    uint64_t n_int = this->exp_denominator;
+    if((n_f = bcd_new()) == (bcd *) 0)                         { break; }
+    if(bcd_import(n_f, this->exp_denominator) == false)        { break; }
+
+    char str1[64];
+    if(bcd_to_str(A, str1, sizeof(str1)) == false)             { break; }
+    DBG_PRINT("%s(): A %s: n %lld\n", __func__, str1, n_int);
+
+    if((X_k = bcd_new()) == (bcd *) 0)                         { break; }
+    if(bcd_import(X_k, 2) == false)                            { break; }
+
+    if((part1     = bcd_new()) == (bcd *) 0)                   { break; }
+    if((part2     = bcd_new()) == (bcd *) 0)                   { break; }
+    if((part3     = bcd_new()) == (bcd *) 0)                   { break; }
+    if((part4     = bcd_new()) == (bcd *) 0)                   { break; }
+    if((delta_X_k = bcd_new()) == (bcd *) 0)                   { break; }
+    if((zero      = bcd_new()) == (bcd *) 0)                   { break; }
+
+    if(bcd_import(zero, 0) == false)                           { break; }
+
+    /* Solve the nth root (see description above). */
+    int x;
+    for(x = 0; x < 1000; x++)
+    {
+      /*                       --------PART__4--------
+       *                       -----PART__3----
+       *             PART__1         -PART__2-
+       * Delta X_k = (1 / n) * ((A / X_k^(n-1)) - X_k); X_k+1 = X_k + Delta X_k.
+       */
+      if(bcd_import(part1, 1) == false)                        { break; }
+      if(bcd_op_div(part1, n_f) == false)                      { break; }
+
+      if(fp_exp_integer_exp(X_k, (n_int - 1), part2) == false) { break; }
+
+      if(bcd_copy(A, part3) == false)                          { break; }
+      if(bcd_op_div(part3, part2) == false)                    { break; }
+
+      if(bcd_copy(part3, part4) == false)                      { break; }
+      if(bcd_op_sub(part4, X_k) == false)                      { break; }
+
+      if(bcd_copy(part1, delta_X_k) == false)                  { break; }
+      if(bcd_op_mul(delta_X_k, part4) == false)                { break; }
+
+      if(bcd_cmp(delta_X_k, zero) == 0)
+      {
+        break;
+      }
+      if(bcd_op_add(X_k, delta_X_k) == false)                  { break; }
+      if(bcd_copy(X_k, guess) == false)                        { break; }
+    }
+    char str2[64];
+    if(bcd_to_str(this->base, str1, sizeof(str1)) == false)    { break; }
+    if(bcd_to_str(X_k,        str2, sizeof(str2)) == false)    { break; }
+    DBG_PRINT("%s(): x %d: this->base %s: this->exp_denominator %lld: X_k %s\n",
+               __func__, x, str1, this->exp_denominator, str2);
+
+    retcode = true;
+  } while(0);
+
+  bcd_delete(zero);
+  bcd_delete(delta_X_k);
+  bcd_delete(part4);
+  bcd_delete(part3);
+  bcd_delete(part2);
+  bcd_delete(part1);
+  bcd_delete(X_k);
+  bcd_delete(n_f);
+  bcd_delete(A);
+
+  return retcode;
 }
 
 /******************************************************************************
@@ -231,7 +323,7 @@ fp_exp_nth_root_guess(fp_exp *this)
  * fp_exp class.
  *
  * Input:
- *   base = The base for the exponentiation.
+ *   base = The floating point base.
  *
  *   exp  = The floating point exponent.
  *
@@ -240,17 +332,34 @@ fp_exp_nth_root_guess(fp_exp *this)
  *   Returns 0 if unable to create the object.
  */
 fp_exp *
-fp_exp_new(double base,
-                double exp)
+fp_exp_new(bcd *base,
+           bcd *exp)
 {
   fp_exp *this = (fp_exp *) 0;
 
-  /* Initialize. */
-  if((this = (fp_exp *) malloc(sizeof(*this))) != (fp_exp *) 0)
+  bool success = false;
+  do
   {
-    /* Save the base and exponent. */
-    this->base = base;
-    this->exp  = exp;
+    /* Initialize. */
+    if((this = (fp_exp *) malloc(sizeof(*this))) == (fp_exp *) 0) { break; }
+
+    this->base   = bcd_new();
+    this->exp    = bcd_new();
+    this->result = bcd_new();
+
+    /* Make copies of the base and exponent. */
+    if((this->base == (bcd *) 0) || (this->exp == (bcd *) 0))     { break; }
+    
+    if(bcd_copy(base, this->base) == false)                       { break; }
+    if(bcd_copy(exp,  this->exp) == false)                        { break; }
+
+    success = true;
+  } while(0);
+
+  if(success == false)
+  {
+    fp_exp_delete(this);
+    this = (fp_exp *) 0;
   }
 
   return this;
@@ -272,7 +381,12 @@ fp_exp_delete(fp_exp *this)
 
   if(this != (fp_exp *) 0)
   {
+    bcd_delete(this->result);
+    bcd_delete(this->exp);
+    bcd_delete(this->base);
+
     free(this);
+
     retcode = true;
   }
 
@@ -317,56 +431,82 @@ fp_exp_calc(fp_exp *this)
 {
   bool retcode = false;
 
-  if(this == (fp_exp *) 0)
-  {
-    return retcode;
-  }
+  bcd *zero      = (bcd *) 0;
+  bcd *one      = (bcd *) 0;
+  bcd *tmp_exp_f = (bcd *) 0;
+  bcd *guess     = (bcd *) 0;
 
-  /* If the exponent is negative, convert to its absolute value and set a flag
-   * to remind us it was negative.  x^-n = 1/(x^n), so we just need to get the
-   * inverse when we're done. */
-  bool do_inverse = false;
-  if(this->exp < 0.0)
+  do
   {
-    do_inverse = true;
-    this->exp = 0.0 - this->exp;
-  }
+    if(this == (fp_exp *) 0)                                                    { break; }
 
-  /* Check to see if the exponent is a whole number.  If it is, then we can do
-   * easy exponentiation. */
-  int64_t tmp_exp_i  = (int64_t) this->exp;
-  double   tmp_exp_f = (double) tmp_exp_i;
-  if(this->exp == tmp_exp_f)
-  {
-    this->result = fp_exp_integer_exp(this->base, tmp_exp_i);
-    retcode = true;
-  }
+    if((zero      = bcd_new()) == (bcd *) 0)                                    { break; }
+    if((one       = bcd_new()) == (bcd *) 0)                                    { break; }
+    if((tmp_exp_f = bcd_new()) == (bcd *) 0)                                    { break; }
+    if((guess     = bcd_new()) == (bcd *) 0)                                    { break; }
 
-  else
-  {
-    /* Convert the exponent to a fraction (numerator and denominator). */
-    if((retcode = fp_exp_to_fraction(this)) == true)
+    /* If the exponent is negative, convert to its absolute value and set a flag
+     * to remind us it was negative.  x^-n = 1/(x^n), so we just need to get the
+     * inverse when we're done. */
+    bool is_neg_exponent = (bcd_cmp(this->exp, zero) < 0);
+    if(is_neg_exponent)
     {
-      /* Solve the nth root (see description above). */
-      double guess = fp_exp_nth_root_guess(this);
-      DBG_PRINT("%s(): nth_root: this->base %f: this->exp_denominator %lld: guess %f\n",
-                 __func__, this->base, this->exp_denominator, guess);
-
-      this->result = fp_exp_integer_exp(guess, this->exp_numerator);
-      DBG_PRINT("%s(): exp: guess %f: this->exp_numerator %lld: this->result %f\n",
-                  __func__, guess, this->exp_numerator, this->result);
+      if(bcd_op_sub(zero, this->exp) == false)                                  { break; }
+      if(bcd_copy(zero, this->exp) == false)                                    { break; }
     }
-  }
 
-  if((retcode == true) && (do_inverse == true))
-  {
-    this->result = 1.0 / this->result;
-  }
+    /* Check to see if the exponent is a whole number.  If it is, then we can do
+     * easy exponentiation. */
+    int64_t tmp_exp_i;
+    if(bcd_export(this->exp, &tmp_exp_i) == false)                              { break; }
+    if(bcd_import(tmp_exp_f, tmp_exp_i) == false)                               { break; }
+    if(bcd_cmp(this->exp, tmp_exp_f) == 0)
+    {
+      if(fp_exp_integer_exp(this->base, tmp_exp_i, this->result) == false)      { break; }
+      retcode = true;
+    }
+
+    else
+    {
+      /* Convert the exponent to a fraction (numerator and denominator). */
+      if(fp_exp_to_fraction(this) == false)                                     { break; }
+
+      /* Solve the nth root (see description above). */
+      if(fp_exp_nth_root_guess(this, guess) == false)                           { break; }
+
+      char buf1[64], buf2[64];
+      if(bcd_to_str(this->base, buf1, sizeof(buf1)) == false)                   { break; }
+      if(bcd_to_str(guess,      buf2, sizeof(buf2)) == false)                   { break; }
+      DBG_PRINT("%s(): nth_root: this->base %s: this->exp_denominator %lld: guess %s\n",
+                 __func__, buf1, this->exp_denominator, buf2);
+
+      if(bcd_to_str(guess,        buf1, sizeof(buf1)) == false)                 { break; }
+      if(bcd_to_str(this->result, buf2, sizeof(buf1)) == false)                 { break; }
+      if(fp_exp_integer_exp(guess, this->exp_numerator, this->result) == false) { break; }
+      DBG_PRINT("%s(): exp: guess %s: this->exp_numerator %lld: this->result %s\n",
+                  __func__, buf1, this->exp_numerator, buf2);
+
+      retcode = true;
+    }
+
+    if((retcode == true) && (is_neg_exponent == true))
+    {
+      if((retcode = bcd_import(one, 1)) == false)                               { break; }
+      if((retcode = bcd_op_div(one, this->result)) == false)                    { break; }
+      if((retcode = bcd_copy(one, this->result)) == false)                      { break; }
+    }
+  } while(0);
+
+  bcd_delete(guess);
+  bcd_delete(tmp_exp_f);
+  bcd_delete(one);
+  bcd_delete(zero);
 
   return retcode;
 }
 
 /* Get the result from fp_exp_calc().
+ *
  * Input:
  *   this   = A pointer to the fp_exp object.
  *
@@ -378,14 +518,13 @@ fp_exp_calc(fp_exp *this)
  */
 bool
 fp_exp_get_result(fp_exp *this,
-                       double      *result)
+                  bcd    *result)
 {
   bool retcode = false;
 
-  if((this != (fp_exp *) 0) && (result != (double *) 0))
+  if((this != (fp_exp *) 0) && (result != (bcd *) 0))
   {
-    *result = this->result;
-    retcode = true;
+    retcode = bcd_copy(this->result, result);
   }
 
   return retcode;
@@ -399,57 +538,89 @@ fp_exp_get_result(fp_exp *this,
 bool
 fp_exp_test(void)
 {
-  bool retcode = true;
+  bool retcode = false;
 
   /* Here are some problems to test against. */
   typedef struct fp_exp_test {
-    double base;
-    double exp;
-    double result;
+    char *name;
+    char *base;
+    char *exp;
+    char *result;
   } fp_exp_test;
   fp_exp_test tests[] = {
-    { 2.0,   3.0,    8.0               },
-    { 2.0,  -3.0,    0.125             },
-    { 2.0,  -2.3456, 0.196745153116215 },
-    { 2.34,  3.45,  18.784286696359032 },
-    { 2.0,   3.5,   11.313708498984754 },
-    { 2.0,   3.6,   12.125732532083205 },
+    { "FP_EXP_01",  "2"    ,   "3"      ,    "8"                     },
+    { "FP_EXP_02",  "2"    ,   "3s"     ,    "0.125"                 },
+    { "FP_EXP_03", "17"    ,    ".23"   ,    "1.918683107361833"     },
+    { "FP_EXP_04",   ".9"  ,    ".7"    ,    "0.928901697685371"     },
+    { "FP_EXP_05",   ".63" ,   "8"      ,    "0.024815578026752"     },
+    { "FP_EXP_06",  "2"    ,   "2.3456s",    "0.196745153116215"     },
+    { "FP_EXP_07",  "2.34" ,   "3.45"   ,   "18.784286696359032"     },
+    { "FP_EXP_08",  "2"    ,   "3.5"    ,   "11.313708498984754"     },
+    { "FP_EXP_09",  "2"    ,   "3.6"    ,   "12.125732532083205"     },
+    { "FP_EXP_10",  "2"    ,   "0"      ,    "1"                     }, // zero exponent.
+    { "FP_EXP_11",  "0"    ,   "3"      ,    "0"                     }, // zero base.
+    { "FP_EXP_12",  "0"    ,   "0"      ,    "1"                     }, // zero base and exponent.
+    { "FP_EXP_13",  "2"    , "199"      ,    "8.034690221294951e+59" }, // big exponent.
   };
   size_t tests_size = (sizeof(tests) / sizeof(fp_exp_test));
 
-  int x;
-  for(x = 0; x < tests_size; x++)
+  bcd *base   = (bcd *) 0;
+  bcd *exp    = (bcd *) 0;
+  bcd *result = (bcd *) 0;
+
+  do
   {
-    bool rc;
-    fp_exp_test *t = &tests[x];
-    fp_exp *obj;
-    rc = ((obj = fp_exp_new(t->base, t->exp)) != (fp_exp *) 0) ? true : false;
-    if((rc) && (obj != (fp_exp *) 0))
+    int x;
+    for(x = 0; x < tests_size; x++)
     {
-      double result = 0.0;
-      if((rc = fp_exp_calc(obj)) == true)
+      fp_exp_test *t = &tests[x];
+      printf("%s: %s ^ %s\n", t->name, t->base, t->exp);
+
+      if((base   = bcd_new()) == (bcd *) 0)               { break; }
+      if((exp    = bcd_new()) == (bcd *) 0)               { break; }
+      if((result = bcd_new()) == (bcd *) 0)               { break; }
+
+      /* Load the base and exponent into bcd objects.  We're not testing the bcd
+       * class here, so don't worry too much about error checking. */
       {
-        rc = fp_exp_get_result(obj, &result);
+        char *p;
+        for(p = t->base; *p != 0; p++) { bcd_add_char(base, *p); }
+        for(p = t->exp;  *p != 0; p++) { bcd_add_char(exp,  *p); }
       }
-      printf("  rc %s: result = %10.15f: t->result %10.15f: ",
-             (rc == true) ? "true" : "false", result, t->result);
-      if((rc == true) && (result == t->result))
+
+      fp_exp *obj;
+      if((obj = fp_exp_new(base, exp)) == (fp_exp *) 0)   { break; }
+
+      if(fp_exp_calc(obj) == false)                       { break; }
+      if(fp_exp_get_result(obj, result) == false)         { break; }
+      if(fp_exp_delete(obj) == false)                     { break; }
+
+      char buf1[1024];
+      if(bcd_to_str(result, buf1, sizeof(buf1)) == false) { break; }
+      printf("  result = %s: t->result %s: ", buf1, t->result);
+
+      if(strcmp(buf1, t->result) == 0)
       {
         printf("PASS\n");
       }
       else
       {
         printf("FAIL\n");
-        retcode = false;
         break;
       }
-    }
 
-    if(rc == false)
-    {
-      break;
+      if(bcd_delete(base)   != true)                      { break; }
+      base   = (bcd *) 0;
+      if(bcd_delete(exp)    != true)                      { break; }
+      exp    = (bcd *) 0;
+      if(bcd_delete(result) != true)                      { break; }
+      result = (bcd *) 0;
     }
-  }
+  } while(0);
+
+  bcd_delete(result);
+  bcd_delete(exp);
+  bcd_delete(base);
 
   return retcode;
 }
