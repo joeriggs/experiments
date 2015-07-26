@@ -480,12 +480,12 @@ fp_exp_calc(fp_exp *this)
 
   do
   {
-    if(this == (fp_exp *) 0)                                                    { break; }
+    if(this == (fp_exp *) 0)                                                           { break; }
 
-    if((zero      = bcd_new()) == (bcd *) 0)                                    { break; }
-    if((one       = bcd_new()) == (bcd *) 0)                                    { break; }
-    if((tmp_exp_f = bcd_new()) == (bcd *) 0)                                    { break; }
-    if((guess     = bcd_new()) == (bcd *) 0)                                    { break; }
+    if((zero      = bcd_new()) == (bcd *) 0)                                           { break; }
+    if((one       = bcd_new()) == (bcd *) 0)                                           { break; }
+    if((tmp_exp_f = bcd_new()) == (bcd *) 0)                                           { break; }
+    if((guess     = bcd_new()) == (bcd *) 0)                                           { break; }
 
     /* If the exponent is negative, convert to its absolute value and set a flag
      * to remind us it was negative.  x^-n = 1/(x^n), so we just need to get the
@@ -493,38 +493,37 @@ fp_exp_calc(fp_exp *this)
     bool is_neg_exponent = (bcd_cmp(this->exp, zero) < 0);
     if(is_neg_exponent)
     {
-      if(bcd_op_sub(zero, this->exp) == false)                                  { break; }
-      if(bcd_copy(zero, this->exp) == false)                                    { break; }
+      if(bcd_op_sub(zero, this->exp) == false)                                         { break; }
+      if(bcd_copy(zero, this->exp) == false)                                           { break; }
     }
 
     /* Check to see if the exponent is a whole number.  If it is, then we can do
      * easy exponentiation. */
     int64_t tmp_exp_i;
-    if(bcd_export(this->exp, &tmp_exp_i) == false)                              { break; }
-    if(bcd_import(tmp_exp_f, tmp_exp_i) == false)                               { break; }
+    if(bcd_export(this->exp, &tmp_exp_i) == false)                                     { break; }
+    if(bcd_import(tmp_exp_f, tmp_exp_i) == false)                                      { break; }
     if(bcd_cmp(this->exp, tmp_exp_f) == 0)
     {
-      retcode = fp_exp_integer_exp(this->base, tmp_exp_i, this->result);
-      break;
+      if((retcode = fp_exp_integer_exp(this->base, tmp_exp_i, this->result)) == false) { break; }
     }
 
     else
     {
       /* Convert the exponent to a fraction (numerator and denominator). */
-      if(fp_exp_to_fraction(this) == false)                                     { break; }
+      if(fp_exp_to_fraction(this) == false)                                            { break; }
 
       /* Solve the nth root (see description above). */
-      if(fp_exp_nth_root_guess(this, guess) == false)                           { break; }
+      if(fp_exp_nth_root_guess(this, guess) == false)                                  { break; }
 
       char buf1[64], buf2[64];
-      if(bcd_to_str(this->base, buf1, sizeof(buf1)) == false)                   { break; }
-      if(bcd_to_str(guess,      buf2, sizeof(buf2)) == false)                   { break; }
+      if(bcd_to_str(this->base, buf1, sizeof(buf1)) == false)                          { break; }
+      if(bcd_to_str(guess,      buf2, sizeof(buf2)) == false)                          { break; }
       DBG_PRINT("%s(): nth_root: this->base %s: this->exp_denominator %lld: guess %s\n",
                  __func__, buf1, this->exp_denominator, buf2);
 
-      if(bcd_to_str(guess,        buf1, sizeof(buf1)) == false)                 { break; }
-      if(bcd_to_str(this->result, buf2, sizeof(buf1)) == false)                 { break; }
-      if(fp_exp_integer_exp(guess, this->exp_numerator, this->result) == false) { break; }
+      if(bcd_to_str(guess,        buf1, sizeof(buf1)) == false)                        { break; }
+      if(bcd_to_str(this->result, buf2, sizeof(buf1)) == false)                        { break; }
+      if(fp_exp_integer_exp(guess, this->exp_numerator, this->result) == false)        { break; }
       DBG_PRINT("%s(): exp: guess %s: this->exp_numerator %lld: this->result %s\n",
                   __func__, buf1, this->exp_numerator, buf2);
 
@@ -533,9 +532,9 @@ fp_exp_calc(fp_exp *this)
 
     if((retcode == true) && (is_neg_exponent == true))
     {
-      if((retcode = bcd_import(one, 1)) == false)                               { break; }
-      if((retcode = bcd_op_div(one, this->result)) == false)                    { break; }
-      if((retcode = bcd_copy(one, this->result)) == false)                      { break; }
+      if((retcode = bcd_import(one, 1)) == false)                                      { break; }
+      if((retcode = bcd_op_div(one, this->result)) == false)                           { break; }
+      if((retcode = bcd_copy(one, this->result)) == false)                             { break; }
     }
   } while(0);
 
