@@ -59,20 +59,30 @@ fp_exp_integer_exp(bcd *base,
     bcd *rslt_tmp = (bcd *) 0;
     bcd *base_tmp = (bcd *) 0;
     bcd *zero     = (bcd *) 0;
+    bcd *one      = (bcd *) 0;
 
     do
     {
       if((rslt_tmp = (base == result) ? bcd_new() : result) == (bcd *) 0) { break; }
       if((base_tmp = bcd_new()) == (bcd *) 0)                             { break; }
       if((zero     = bcd_new()) == (bcd *) 0)                             { break; }
+      if((one      = bcd_new()) == (bcd *) 0)                             { break; }
 
       if(bcd_copy(base, base_tmp) == false)                               { break; }
       if(bcd_import(zero, 0) == false)                                    { break; }
+      if(bcd_import(one, 1) == false)                                     { break; }
+
+      /* Special case.  base ^ 0 = 1. */
+      if(exp == 0)
+      {
+        retcode = bcd_copy(one, rslt_tmp);
+        break;
+      }
 
       /* Special case.  0 ^ exp = 0. */
       if(bcd_cmp(base, zero) == 0)
       {
-        retcode = bcd_copy(zero, base);
+        retcode = bcd_copy(zero, rslt_tmp);
         break;
       }
 
@@ -95,6 +105,7 @@ fp_exp_integer_exp(bcd *base,
       
     } while(0);
 
+    bcd_delete(one);
     bcd_delete(zero);
     bcd_delete(base_tmp);
 
