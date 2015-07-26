@@ -6,6 +6,7 @@
 - Bugs:
   - Exponentiation is broken due to adding the BCD class.
   - Switching between BCD and HEX is broken.
+    - Hex needs testing.  Hasn't been tested since BCD was added.
 
 - Enhanced implementation:
   - Parentheses:

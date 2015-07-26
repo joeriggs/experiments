@@ -446,6 +446,8 @@ calculator_new(void)
   /* Initialize. */
   if((this = (calculator *) malloc(sizeof(*this))) != (calculator *) 0)
   {
+    memset(this, 0, sizeof(*this));
+
     /* Create an empty infix list. */
     if((this->infix_list = list_new()) != (list *) 0)
     {
@@ -787,32 +789,33 @@ calculator_test(void)
   /* Loop through some math problems.  This tests the basic functionality of
    * the calculator.  We're checking to make sure it can do math. */
   typedef struct calculator_test {
+    const char *name;
     const char *infix;
     bool        postfix_retcode;
     bool        console_retcode;
     const char *result;
   } calculator_test;
   calculator_test tests[] = {
-    { "",                true,  true,       "0"            }, // Empty equation.
-    { "1+2*3",           true,  true,       "7"            }, // Order of operations.
-    { "10+20*30",        true,  true,     "610"            }, // Order of operations.
-    { "10/0+20*30",     false, false,        ""            }, // Divide by zero.
-    { "\b2*((5+5)/2)",   true,  true,      "10"            }, // Embedded parentheses.
-    { "(1+2)*3",         true,  true,       "9"            }, // Parentheses override order.
-    { "*3",              true,  true,      "27"            }, // Follow-on to the previous result.
-    { "7/10",            true,  true,       "0.7"          }, // int / int = float.
-    { "7.4/10",          true,  true,       "0.74"         }, // float / int.
-    { "2.5*2",           true,  true,       "5"            }, // float * int.
-    { "2^3",             true,  true,       "8"            }, // int ^ int.
-    { "2^3s",            true,  true,       "0.125000"     }, // int ^ -int.
-    { "2.34^5",          true,  true,      "70.1583371424" }, // float ^ int.
-    { "3^12.345",        true,  true, "776,357.74428398"   }, // int ^ float.
-    { "2.34^5.678",      true,  true,     "124.8554885559" }, // float ^ float.
-    { "(10+20)*(30+40", false, false,        ""            }, // Unbalanced parentheses.
-    { "5+(10)",          true,  true,      "15"            }, // Odd use of parentheses.
-    { "200+()*3",        true,  true,     "600"            }, // Odd use of parentheses.
-    { "11*)",           false, false,        ""            }, // Unablanced parentheses.
-    { "7*(2+9",         false, false,        ""            }, // Unablanced parentheses.
+    { "CALC_01", "",                true,  true,       "0"            }, // Empty equation.
+    { "CALC_02", "1+2*3",           true,  true,       "7"            }, // Order of operations.
+    { "CALC_03", "10+20*30",        true,  true,     "610"            }, // Order of operations.
+    { "CALC_04", "10/0+20*30",     false, false,        ""            }, // Divide by zero.
+    { "CALC_05", "\b2*((5+5)/2)",   true,  true,      "10"            }, // Embedded parentheses.
+    { "CALC_06", "(1+2)*3",         true,  true,       "9"            }, // Parentheses override order.
+    { "CALC_07", "*3",              true,  true,      "27"            }, // Follow-on to the previous result.
+    { "CALC_08", "7/10",            true,  true,       "0.7"          }, // int / int = float.
+    { "CALC_09", "7.4/10",          true,  true,       "0.74"         }, // float / int.
+    { "CALC_10", "2.5*2",           true,  true,       "5"            }, // float * int.
+    { "CALC_11", "2^3",             true,  true,       "8"            }, // int ^ int.
+    { "CALC_12", "2^3s",            true,  true,       "0.125"        }, // int ^ -int.
+    { "CALC_13", "2.34^5",          true,  true,      "70.1583371424" }, // float ^ int.
+    { "CALC_14", "3^12.345",        true,  true, "776,357.74428398"   }, // int ^ float.
+    { "CALC_15", "2.34^5.678",      true,  true,     "124.8554885559" }, // float ^ float.
+    { "CALC_16", "(10+20)*(30+40", false, false,        ""            }, // Unbalanced parentheses.
+    { "CALC_17", "5+(10)",          true,  true,      "15"            }, // Odd use of parentheses.
+    { "CALC_18", "200+()*3",        true,  true,     "600"            }, // Odd use of parentheses.
+    { "CALC_19", "11*)",           false, false,        ""            }, // Unablanced parentheses.
+    { "CALC_20", "7*(2+9",         false, false,        ""            }, // Unablanced parentheses.
 
   };
   size_t calculator_test_size = (sizeof(tests) / sizeof(calculator_test));
@@ -822,8 +825,8 @@ calculator_test(void)
   {
     calculator_test *t = &tests[x];
 
+    printf("%s: %s\n", t->name, t->infix);
     const char *infix = t->infix;
-    printf("%s\n", infix);
     while(*infix)
     {
       if(calculator_add_char(this, *(infix++)) != true)                                  return false;

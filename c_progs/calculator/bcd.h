@@ -30,6 +30,14 @@ bool bcd_add_char(bcd *this, char c);
 
 bool bcd_to_str(bcd *this, char *buf, size_t buf_size);
 
+bool bcd_copy(bcd *src, bcd *dst);
+
+int bcd_cmp(bcd *obj1, bcd *obj2);
+
+bool bcd_import(bcd *this, int64_t src);
+
+bool bcd_export(bcd *this, int64_t *dst);
+
 /********************************** TEST API **********************************/
 
 #if defined(TEST)

@@ -14,6 +14,7 @@
 #include "common.h"
 
 #include "bcd.h"
+#include "fp_exp.h"
 
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
@@ -1092,7 +1093,24 @@ bcd_op_sub(bcd *op1,
 
   if((op1 != (bcd *) 0) && (op2 != (bcd *) 0))
   {
-    do
+    /* op1 - 0 = op1. */
+    if(bcd_sig_is_zero(&op2->significand) == true)
+    {
+      retcode = true;
+    }
+
+    /* 0 - op2 = -op2. */
+    else if(bcd_sig_is_zero(&op1->significand) == true)
+    {
+      if(bcd_copy(op2, op1) == true)
+      {
+        op1->sign = (op1->sign == true) ? false : true;
+        retcode = true;
+      }
+    }
+
+    /* op1 and op2 are both != 0. */
+    else do
     {
       /* Start with the raw significands. */
       significand_t *sig1 = &op1->significand;
@@ -1122,7 +1140,16 @@ bcd_op_sub(bcd *op1,
        * NEG - POS  = Sign is negative.
        * NEG - NEG  = Sign is defined by overflow.
        */
-      if(op1->sign == op2->sign)
+      if((op1->sign == false) && (op2->sign == false))
+      {
+        op1->sign = ((overflow != 0) ? false : true);
+        if(op1->sign == true)
+        {
+          if((retcode = bcd_tens_complement(sig1, &op1->significand)) != true) break;
+          DBG_PRINT("%s():       NEGATIVE: %s.\n", __func__, bcd_sig_to_str(sig1));
+        }
+      }
+      else if((op1->sign == true) && (op2->sign == true))
       {
         op1->sign = (overflow != 0) ? false : true;
         if(op1->sign == true)
@@ -1491,10 +1518,20 @@ bcd_op_exp(bcd *op1,
 {
   bool retcode = false;
 
-  if((op1 != (bcd *) 0) && (op2 != (bcd *) 0))
+  do
   {
+    fp_exp *fp;
 
-  }
+    if((op1 == (bcd *) 0) || (op2 == (bcd *) 0))    { break; }
+
+    if((fp = fp_exp_new(op1, op2)) == (fp_exp *) 0) { break; }
+
+    if(fp_exp_calc(fp) == false)                    { break; }
+
+    if(fp_exp_get_result(fp, op1) == false)         { break; }
+
+    retcode = fp_exp_delete(fp);
+  } while(0);
     
   return retcode;
 }
@@ -1519,20 +1556,10 @@ bcd_new(void)
 
   if(this != (bcd *) 0)
   {
-    /* Start with zero (+0 * 10^0 = 0). */
-    if(bcd_sig_initialize(&this->significand) == false)
+    if(bcd_import(this, 0) == false)
     {
       bcd_delete(this);
       this = (bcd *) 0;
-    }
-    else
-    {
-      this->exponent          = 0;
-      this->sign              = 0;
-
-      /* These come into play if we're receiving digits via bcd_add_char(). */
-      this->got_decimal_point = false;
-      this->char_count        = 0;
     }
   }
 
@@ -1743,6 +1770,217 @@ bcd_to_str(bcd  *this,
   return retcode;
 }
 
+/* Make a copy of a BCD object.  The caller provides a src and dst, and this
+ * member makes a copy.
+ *
+ * Input:
+ *   src = A pointer to the bcd object.
+ *
+ *   dst = A pointer to a pre-allocated bcd object that we will copy into.
+ *
+ * Output:
+ *   true  = success.  src has been copied to dst.
+ *   false = failure.  The contents of dst is undefined.
+ */
+bool
+bcd_copy(bcd *src,
+         bcd *dst)
+{
+  bool retcode = false;
+
+  if( (src != (bcd *) 0) && (dst != (bcd *) 0) )
+  {
+    if((retcode = bcd_sig_copy(&src->significand, &dst->significand)) == true)
+    {
+      dst->exponent          = src->exponent;
+      dst->sign              = src->sign;
+      dst->char_count        = src->char_count;
+      dst->got_decimal_point = src->got_decimal_point;
+    }
+  }
+
+  return retcode;
+}
+
+/* Compare 2 bcd objects.
+ *
+ * Input:
+ *   obj1 = A pointer to one of the bcd objects.
+ *
+ *   obj2 = A pointer to one of the bcd objects.
+ *
+ * Output:
+ *   -1 if *obj1 <  *obj2.
+ *    0 if *obj1 == *obj2.
+ *    1 if *obj1 >  *obj2.
+ */
+int
+bcd_cmp(bcd *obj1,
+        bcd *obj2)
+{
+  int retval = 0;
+
+  if( (obj1 != (bcd *) 0) && (obj2 != (bcd *) 0) )
+  {
+    /* Negatives are always less than positives. */
+    if((obj1->sign == true) && (obj2->sign == false))
+    {
+      retval = -1;
+    }
+ 
+    /* Positives are always greater than negatives. */
+    else if((obj1->sign == false) && (obj2->sign == true))
+    {
+      retval =  1;
+    }
+
+    /* If they're either both positive or both negative. */
+    else
+    {
+      bcd *tmp_obj1 = bcd_new();
+      bcd *tmp_obj2 = bcd_new();
+      if((tmp_obj1 != (bcd *) 0) &&
+         (tmp_obj2 != (bcd *) 0) &&
+         (bcd_copy(obj1, tmp_obj1) == true) &&
+         (bcd_copy(obj2, tmp_obj2) == true))
+      {
+        /* Compare 2 positive numbers. */
+        if((obj1->sign == false) && (obj2->sign == false))
+        {
+          if(bcd_op_sub(tmp_obj1, tmp_obj2) == true)
+          {
+            if(bcd_sig_is_zero(&tmp_obj1->significand)) { retval =  0; }
+            else if(tmp_obj1->sign == true)             { retval = -1; }
+            else                                        { retval =  1; }
+          }
+        }
+
+
+        /* Compare 2 negative numbers. */
+        else
+        {
+          if(bcd_op_sub(tmp_obj1, tmp_obj2) == true)
+          {
+            if(bcd_sig_is_zero(&tmp_obj1->significand)) { retval =  0; }
+            else if(tmp_obj1->sign == false)            { retval =  1; }
+            else                                        { retval = -1; }
+          }
+        }
+      }
+
+      bcd_delete(tmp_obj2);
+      bcd_delete(tmp_obj1);
+    }
+  }
+
+  return retval;
+}
+
+/* Import a signed integer value into this object.  Note that this member
+ * doesn't allow you to import an IEEE floating point value.
+ *
+ * Input:
+ *   this     = A pointer to the bcd object.
+ *
+ *   src      = A signed integer value to use to seed the object.  If there is
+ *              a value already loaded into this object, it will be erased.
+ *
+ * Output:
+ *   true  = success.  this has been imported.
+ *   false = failure.  The contents of this is undefined.
+ */
+bool
+bcd_import(bcd     *this,
+           int64_t  src)
+{
+  bool retcode = false;
+
+  do
+  {
+    if(this == (bcd *) 0)                                         { break; }
+
+    if(bcd_sig_initialize(&this->significand) == false)           { break; }
+
+    /* Set the sign, and then set src = |src|. */
+    this->sign = 0;
+    if(src < 0)
+    {
+      this->sign = 1;
+      src = (0 - src);
+    }
+
+    this->exponent = 0;
+    while(src != 0)
+    {
+      uint8_t digit = (src % 10);
+
+      if(bcd_shift_significand(&this->significand, 1) == false)   { break; }
+
+      if(bcd_sig_set_byte(&this->significand, 0, digit) == false) { break; }
+
+      if((src /= 10) != 0)
+      {
+        this->exponent++;
+      }
+    }
+
+    this->got_decimal_point = false;
+    this->char_count        = 0;
+
+    retcode = true;
+  } while(0);
+
+  return retcode;
+}
+
+/* Export the value of this object to a signed integer.  Note that this member
+ * doesn't allow you to export to an IEEE floating point value.
+ *
+ * Input:
+ *   this     = A pointer to the bcd object.
+ *
+ *   dst      = A pointer to a signed integer value that will receive the value
+ *              of this.
+ *
+ * Output:
+ *   true  = success.  this has been exported.
+ *   false = failure.  The contents of dst is undefined.
+ */
+bool
+bcd_export(bcd     *this,
+           int64_t *dst)
+{
+  bool retcode = false;
+
+  do
+  {
+    if((this == (bcd *) 0) || (dst == (int64_t *) 0))             { break; }
+
+    *dst = 0;
+
+    retcode = true;
+
+    if((this->exponent < 0) || (this->exponent > BCD_NUM_DIGITS)) { break; }
+
+    int offset;
+    for(offset = 0; offset <= this->exponent; offset++)
+    {
+      uint8_t digit = bcd_sig_get_byte(&this->significand, offset);
+
+      *dst *= 10;
+      *dst += digit;
+    }
+
+    /* Set the sign. */
+    if(this->sign == 1)
+    {
+      *dst = (0 - *dst);
+    }
+  } while(0);
+
+  return retcode;
+}
+
 /******************************************************************************
  ********************************** TEST API **********************************
  *****************************************************************************/
@@ -1924,6 +2162,11 @@ bcd_test(void)
     { "BCD_SUB_06", bcd_op_sub,              "432.1s"              ,                "7.5678"            ,                  "-439.6678"                }, // Neg - Pos = Neg.
     { "BCD_SUB_07", bcd_op_sub,             "1225s"                ,               "34.95s"             ,                "-1,190.05"                  }, // Neg - Neg = Neg.
     { "BCD_SUB_08", bcd_op_sub, "1111111111111111s"                , "1234567890123456s"                ,   "123,456,779,012,345"                     }, // Neg - Neg = Pos.
+    { "BCD_SUB_09", bcd_op_sub,                "3"                 ,                "0"                 ,                     "3"                     }, // Val - 0 = Val.
+    { "BCD_SUB_10", bcd_op_sub,                "0"                 ,           "452389.841"             ,              "-452,389.841"                 }, // 0 - +Val = -Val.
+    { "BCD_SUB_11", bcd_op_sub,                "0"                 ,                 ".2841s"           ,                     "0.2841"                }, // 0 - -Val = +Val.
+    { "BCD_SUB_11", bcd_op_sub,                "0"                 ,                "0"                 ,                     "0"                     }, // 0 - 0 = 0.
+
 
     { "BCD_MUL_01", bcd_op_mul,                "3"                 ,                "2"                 ,                     "6"                     }, // Debug.
     { "BCD_MUL_02", bcd_op_mul,             "4567"                 ,            "56789"                 ,           "259,355,363"                     }, // Lots of carry.
@@ -2032,8 +2275,8 @@ bcd_test(void)
     if(bcd_sig_initialize(&o1->significand) != true)                                          return false;
     if(bcd_sig_initialize(&o2->significand) != true)                                          return false;
     if(bcd_sig_set_byte(&o1->significand, 0, 1) != true)                                      return false;
-    o1->exponent = 1; o1->got_decimal_point = 0; o1->sign = 0;
-    o2->exponent = 1; o2->got_decimal_point = 0; o2->sign = 0;
+    o1->exponent = 1; o1->got_decimal_point = 0; o1->sign = false;
+    o2->exponent = 1; o2->got_decimal_point = 0; o2->sign = false;
     if(bcd_op_div(o1, o2) != false)                                                           return false;
 
     printf("Mul very large and very small numbers.\n");
@@ -2043,8 +2286,8 @@ bcd_test(void)
       if(bcd_sig_set_byte(&o1->significand, x, 9) != true)                                    return false;
     }
     if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                                      return false;
-    o1->exponent = 15; o1->got_decimal_point = 0; o1->sign = 0;
-    o2->exponent =  2; o2->got_decimal_point = 0; o2->sign = 0;
+    o1->exponent = 15; o1->got_decimal_point = 0; o1->sign = false;
+    o2->exponent =  2; o2->got_decimal_point = 0; o2->sign = false;
     if(bcd_op_mul(o1, o2) != true)                                                            return false;
     memset(buf, 0, sizeof(buf));
     if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)                                  return false;
@@ -2052,11 +2295,46 @@ bcd_test(void)
 
     printf("Now add a very small number.\n");
     if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                                      return false;
-    o2->exponent =  1; o2->got_decimal_point = 0; o2->sign = 0;
+    o2->exponent =  1; o2->got_decimal_point = 0; o2->sign = false;
     if(bcd_op_add(o1, o2) != true)                                                            return false;
     memset(buf, 0, sizeof(buf));
     if((retcode = bcd_to_str(o1, buf, sizeof(buf))) != true)                                  return false;
     if((retcode = (strcmp("9.999999999999999e+17", buf) == 0)) != true)                       return false;
+
+    printf("bcd_copy() and bcd_cmp().\n");
+    if(bcd_sig_initialize(&o1->significand) != true)                                          return false;
+    if(bcd_sig_set_byte(&o1->significand, 0, 1) != true)                                      return false;
+    o1->exponent =  0; o1->got_decimal_point = 0; o1->sign = false;
+    if(bcd_sig_initialize(&o2->significand) != true)                                          return false;
+    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                                      return false;
+    o2->exponent =  0; o2->got_decimal_point = 0; o2->sign = false;
+    if(bcd_cmp(o1, o2) != 0)                                                                  return false;
+    o1->sign = true;
+    if(bcd_cmp(o1, o2) != -1)                                                                 return false;
+    o2->sign = true;
+    if(bcd_cmp(o1, o2) !=  0)                                                                 return false;
+    o1->sign = false;
+    if(bcd_cmp(o1, o2) !=  1)                                                                 return false;
+    for(x = 0; x < (BCD_NUM_DIGITS - 1); x++)
+    {
+      if(bcd_sig_set_byte(&o1->significand, x, 9) != true)                                    return false;
+    }
+    o1->exponent = 0; o1->sign = false;
+    if(bcd_copy(o1, o2) != true)                                                              return false;
+    if(bcd_cmp(o1, o2) !=  0)                                                                 return false;
+
+    printf("bcd_import() and bcd_export().\n");
+    int64_t exp;
+    if(bcd_import(o1, 1000) != true)                                                          return false;
+    if(bcd_export(o1, &exp) != true)                                                          return false;
+    if(exp != 1000)                                                                           return false;
+    if(bcd_import(o1, 0) != true)                                                             return false;
+    if(bcd_add_char(o1, '5') != true)                                                         return false;
+    if(bcd_add_char(o1, '0') != true)                                                         return false;
+    if(bcd_add_char(o1, '0') != true)                                                         return false;
+    if(bcd_export(o1, &exp) != true)                                                          return false;
+    if(exp != 500)                                                                            return false;
+
     bcd_delete(o1); bcd_delete(o2);
   }
 #endif // TEST_SPECIAL
