@@ -29,24 +29,23 @@ struct fp_exp {
 };
 
 /******************************************************************************
- ******************************** PRIVATE API *********************************
+ ******************************** PRIMITIVES **********************************
  *****************************************************************************/
 
 /* Perform an exponentiation with a floating point base and an integer exponent.
  *
- * Note that we aren't using the base and exp that are stored in an fp_exp
- * object.  This method just provides a utility service that is needed to
- * calculate the actual exponent.
- *
  * Input:
  *   base   = The floating point base.
  *
- *   exp    = The exponent.  Currently only supports positive exponents.
+ *   exp    = The integer exponent.  Currently only supports positive exponents.
  *
- *   result = A point to the bcd object that will receive the result.
+ *   result = A pointer to the bcd object that will receive the result.  Note
+ *            that it is okay if base == result.  We will make sure we don't
+ *            stomp on base while we compute result.
  *
  * Output:
- *   Returns the result.
+ *   true  = success.  *result contains the result.
+ *   false = failure.  *result is undefined.
  */
 static bool
 fp_exp_integer_exp(bcd *base,
@@ -55,33 +54,63 @@ fp_exp_integer_exp(bcd *base,
 {
   bool retcode = false;
 
-  /* base^0 = 1. */
-  if(exp == 0)
+  if((base != (bcd *) 0) && (result != (bcd *) 0))
   {
-    retcode = bcd_import(result, 1);
-  }
+    bcd *rslt_tmp = (bcd *) 0;
+    bcd *base_tmp = (bcd *) 0;
+    bcd *zero     = (bcd *) 0;
 
-  /* base^1 = base */
-  else if(exp == 1)
-  {
-    retcode = bcd_copy(base, result);
-  }
-
-  /* All others must be calculated. */
-  else
-  {
-    if((retcode = bcd_copy(base, result)) == true)
+    do
     {
-      while((--exp > 0) && (retcode == true))
+      if((rslt_tmp = (base == result) ? bcd_new() : result) == (bcd *) 0) { break; }
+      if((base_tmp = bcd_new()) == (bcd *) 0)                             { break; }
+      if((zero     = bcd_new()) == (bcd *) 0)                             { break; }
+
+      if(bcd_copy(base, base_tmp) == false)                               { break; }
+      if(bcd_import(zero, 0) == false)                                    { break; }
+
+      /* Special case.  0 ^ exp = 0. */
+      if(bcd_cmp(base, zero) == 0)
       {
-        retcode = bcd_op_mul(result, base);
+        retcode = bcd_copy(zero, base);
+        break;
       }
+
+      /* Set res = 1.  (base ^ 0) = 1, so this is the right place to start. */
+      if(bcd_import(rslt_tmp, 1) == false)                                { break; }
+
+      while(exp != 0)
+      {
+        if((exp & 1) != 0)
+        {
+          if(bcd_op_mul(rslt_tmp, base_tmp) == false)                     { break; }
+        }
+
+        /* Prepare for the next iteration. */
+        if(bcd_op_mul(base_tmp, base_tmp) == false)                       { break; }
+        exp >>= 1;
+      }
+
+      retcode = (exp == 0) ? true : false;
+      
+    } while(0);
+
+    bcd_delete(zero);
+    bcd_delete(base_tmp);
+
+    if((retcode == true) && (base == result))
+    {
+      retcode = bcd_copy(rslt_tmp, result);
+      bcd_delete(rslt_tmp);
     }
   }
 
   return retcode;
 }
 
+/******************************************************************************
+ ******************************** PRIVATE API *********************************
+ *****************************************************************************/
 
 /* Convert the floating point exponent into a fraction, and then reduce the
  * fraction.  For example, if this->exp = 3.45:
@@ -95,7 +124,9 @@ fp_exp_integer_exp(bcd *base,
  *   this = A pointer to the fp_exp object.
  *
  * Output:
- *   true  = success.  The exponent has been converted to a fraction.
+ *   true  = success.  The exponent has been converted to a fraction.  The
+ *                     fraction is stored in this->exp_numerator and
+ *                     this->exp_denominator.
  *   false = failure.  Something went wrong.
  */
 static bool
@@ -462,8 +493,8 @@ fp_exp_calc(fp_exp *this)
     if(bcd_import(tmp_exp_f, tmp_exp_i) == false)                               { break; }
     if(bcd_cmp(this->exp, tmp_exp_f) == 0)
     {
-      if(fp_exp_integer_exp(this->base, tmp_exp_i, this->result) == false)      { break; }
-      retcode = true;
+      retcode = fp_exp_integer_exp(this->base, tmp_exp_i, this->result);
+      break;
     }
 
     else
@@ -548,19 +579,27 @@ fp_exp_test(void)
     char *result;
   } fp_exp_test;
   fp_exp_test tests[] = {
-    { "FP_EXP_01",  "2"    ,   "3"      ,    "8"                     },
-    { "FP_EXP_02",  "2"    ,   "3s"     ,    "0.125"                 },
-    { "FP_EXP_03", "17"    ,    ".23"   ,    "1.918683107361833"     },
-    { "FP_EXP_04",   ".9"  ,    ".7"    ,    "0.928901697685371"     },
-    { "FP_EXP_05",   ".63" ,   "8"      ,    "0.024815578026752"     },
-    { "FP_EXP_06",  "2"    ,   "2.3456s",    "0.196745153116215"     },
-    { "FP_EXP_07",  "2.34" ,   "3.45"   ,   "18.784286696359032"     },
-    { "FP_EXP_08",  "2"    ,   "3.5"    ,   "11.313708498984754"     },
-    { "FP_EXP_09",  "2"    ,   "3.6"    ,   "12.125732532083205"     },
-    { "FP_EXP_10",  "2"    ,   "0"      ,    "1"                     }, // zero exponent.
-    { "FP_EXP_11",  "0"    ,   "3"      ,    "0"                     }, // zero base.
-    { "FP_EXP_12",  "0"    ,   "0"      ,    "1"                     }, // zero base and exponent.
-    { "FP_EXP_13",  "2"    , "199"      ,    "8.034690221294951e+59" }, // big exponent.
+    { "FP_EXP_01",  "2"    ,   "3"      ,                     "8"                     }, // Int ^ Int = Int.
+    { "FP_EXP_02", "18"    ,   "8"      ,        "11,019,960,576"                     }, //   Little tougher.
+    { "FP_EXP_03", "97"    ,  "16"      ,                     "6.142536534626857e+31" }, // Test_1.
+    { "FP_EXP_04", "97"    ,   "8"      , "7,837,433,594,376,961"                     }, // Test_2.
+    { "FP_EXP_05", "97"    ,   "1"      ,                    "97"                     }, // Test_3.
+    { "FP_EXP_06", "97"    ,  "25"      ,                     "4.66974705254372e+49"  }, // Test_1 * Test_2 * Test_3.
+    { "FP_EXP_07",  "2"    ,   "3s"     ,                     "0.125"                 }, // Int ^ -Int = Fraction.
+    { "FP_EXP_08", "25"    ,   "7s"     ,                     "0.00000000016384"      }, //   Little tougher.
+    { "FP_EXP_09", "17"    ,  "21s"     ,                     "1.447346952625563e-26" }, //   Little tougher.
+    { "FP_EXP_10", "17"    ,    ".23"   ,                     "1.918683107361833"     },
+    { "FP_EXP_11",   ".9"  ,    ".7"    ,                     "0.928901697685371"     },
+    { "FP_EXP_12",   ".63" ,   "8"      ,                     "0.024815578026752"     },
+    { "FP_EXP_13",  "2"    ,   "2.3456s",                     "0.196745153116215"     },
+    { "FP_EXP_14",  "2.34" ,   "3.45"   ,                    "18.784286696359032"     },
+    { "FP_EXP_15",  "2"    ,   "3.5"    ,                    "11.313708498984754"     },
+    { "FP_EXP_16",  "2"    ,   "3.6"    ,                    "12.125732532083205"     },
+    { "FP_EXP_17",  "2"    ,   "0"      ,                     "1"                     }, // zero exponent.
+    { "FP_EXP_18",  "0"    ,   "3"      ,                     "0"                     }, // zero base.
+    { "FP_EXP_19",  "0"    ,   "0"      ,                     "1"                     }, // zero base and exponent.
+    { "FP_EXP_20",  "2"    , "199"      ,                     "8.034690221294951e+59" }, // big exponent.
+    { "FP_EXP_21", "25.43" ,   "1"      ,                    "25.43"                  }, // X ^ 1 = X.
   };
   size_t tests_size = (sizeof(tests) / sizeof(fp_exp_test));
 
