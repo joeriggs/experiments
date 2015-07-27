@@ -16,19 +16,39 @@
 #include "bcd.h"
 #include "fp_exp.h"
 
+#define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
 /******************************************************************************
  ****************************** CLASS DEFINITION ******************************
  *****************************************************************************/
 
+/* The basic data element that stores the BCD digits internally. */
+typedef uint32_t significand_section_t;
+
+/* The data element that is passed to bcd_add_half_width().  It allows an
+ * addition operation to carry at the top end. */
+typedef uint64_t significand_large_section_t;
+
+/* The number of digits that can be stored in a single data element. */
+#define SIGNIFICAND_DIGITS_PER_SECTION (sizeof(significand_section_t) * 2)
+
+/* This is the number of digits that the user can push into a bcd object via
+ * bcd_add_char(). */
 #define BCD_NUM_DIGITS 16 // Must be a multiple of 8
 
-typedef uint32_t significand_section_t;
-typedef uint64_t significand_large_section_t;
-#define SIGNIFICAND_DIGITS_PER_SECTION (sizeof(significand_section_t) * 2)
-#define SIGNIFICAND_SECTIONS (BCD_NUM_DIGITS / SIGNIFICAND_DIGITS_PER_SECTION)
-typedef struct { significand_section_t s[SIGNIFICAND_SECTIONS]; } significand_t;
+/* This is the number of digits that we work with internally.  It gives us a
+ * lot of extra precision, thus allowing us to do things like:
+ * - Perform repeated operations like exponentiation.
+ * - Perform rounding on results.
+ */
+#define BCD_NUM_DIGITS_INTERNAL (BCD_NUM_DIGITS * 2)
+
+/* The number of data elements required to hold all of the digits. */
+#define SIGNIFICAND_SECTIONS_INTERNAL (BCD_NUM_DIGITS_INTERNAL / SIGNIFICAND_DIGITS_PER_SECTION)
+
+/* The definition of the significand that is located in each bcd object. */
+typedef struct { significand_section_t s[SIGNIFICAND_SECTIONS_INTERNAL]; } significand_t;
 
 #define SIGNIFICAND_ADD_HALF_VAL1              0x066666666ll
 #define SIGNIFICAND_ADD_HALF_VAL2              0x111111110ll
@@ -78,8 +98,8 @@ struct bcd {
  *   If failure, returns 0xF.
  */
 static uint8_t
-bcd_sect_get_byte(significand_section_t section,
-                  int                   offset)
+bcd_sect_get_digit(significand_section_t section,
+                   int                   offset)
 {
   uint8_t retval = 0xF;
 
@@ -110,9 +130,9 @@ bcd_sect_get_byte(significand_section_t section,
  *   Return false if failure.
  */
 static bool
-bcd_sect_set_byte(significand_section_t *section,
-                  int                    offset,
-                  uint8_t                value)
+bcd_sect_set_digit(significand_section_t *section,
+                   int                    offset,
+                   uint8_t                value)
 {
   bool retcode = false;
 
@@ -153,16 +173,16 @@ bcd_sect_set_byte(significand_section_t *section,
  *   If failure, returns 0xF.
  */
 static uint8_t
-bcd_sig_get_byte(significand_t *significand,
-                 int            offset)
+bcd_sig_get_digit(significand_t *significand,
+                  int            offset)
 {
   uint8_t retval = 0xF;
 
-  if( (significand != (significand_t *) 0) && (offset < BCD_NUM_DIGITS) )
+  if( (significand != (significand_t *) 0) && (offset < BCD_NUM_DIGITS_INTERNAL) )
   {
     int index = offset / SIGNIFICAND_DIGITS_PER_SECTION;
     int section_offset = (offset % 8);
-    retval = bcd_sect_get_byte(significand->s[index], section_offset);
+    retval = bcd_sect_get_digit(significand->s[index], section_offset);
   }
 
   return retval;
@@ -185,17 +205,17 @@ bcd_sig_get_byte(significand_t *significand,
  *   Return false if failure.
  */
 static bool
-bcd_sig_set_byte(significand_t *significand,
-                 int            offset,
-                 int            value)
+bcd_sig_set_digit(significand_t *significand,
+                  int            offset,
+                  int            value)
 {
   bool retcode = false;
 
-  if( (significand != (significand_t *) 0) && (offset < BCD_NUM_DIGITS) )
+  if( (significand != (significand_t *) 0) && (offset < BCD_NUM_DIGITS_INTERNAL) )
   {
     int index = offset / SIGNIFICAND_DIGITS_PER_SECTION;
     int section_offset = (offset % 8);
-    retcode = bcd_sect_set_byte(&significand->s[index], section_offset, value);
+    retcode = bcd_sect_set_digit(&significand->s[index], section_offset, value);
   }
 
   return retcode;
@@ -228,12 +248,12 @@ bcd_shift_significand(significand_t *sig,
     /* Left shift starts at the beginning of the number. */
     if(shift < 0)
     {
-      for(i = 0; i < BCD_NUM_DIGITS; i++)
+      for(i = 0; i < BCD_NUM_DIGITS_INTERNAL; i++)
       {
         int src_offset = i - shift;
         int dst_offset = i;
-        uint8_t c = (src_offset >= BCD_NUM_DIGITS) ? 0 : bcd_sig_get_byte(sig, src_offset);
-        if((retcode = bcd_sig_set_byte(sig, dst_offset, c)) != true)
+        uint8_t c = (src_offset >= BCD_NUM_DIGITS_INTERNAL) ? 0 : bcd_sig_get_digit(sig, src_offset);
+        if((retcode = bcd_sig_set_digit(sig, dst_offset, c)) != true)
         {
           break;
         }
@@ -243,12 +263,12 @@ bcd_shift_significand(significand_t *sig,
     /* Right shift starts at the end. */
     else if(shift > 0)
     {
-      for(i = (BCD_NUM_DIGITS - 1); i >= 0; i--)
+      for(i = (BCD_NUM_DIGITS_INTERNAL - 1); i >= 0; i--)
       {
         int src_offset = i - shift;
         int dst_offset = i;
-        uint8_t c = (src_offset < 0) ? 0 : bcd_sig_get_byte(sig, src_offset);
-        if((retcode = bcd_sig_set_byte(sig, dst_offset, c)) != true)
+        uint8_t c = (src_offset < 0) ? 0 : bcd_sig_get_digit(sig, src_offset);
+        if((retcode = bcd_sig_set_digit(sig, dst_offset, c)) != true)
         {
           break;
         }
@@ -283,7 +303,7 @@ bcd_sig_initialize(significand_t *significand)
   if(significand != (significand_t *) 0)
   {
     int i;
-    for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+    for(i = 0; i < SIGNIFICAND_SECTIONS_INTERNAL; i++)
     {
       significand->s[i] = 0;
     }
@@ -310,8 +330,8 @@ bcd_sig_is_zero(significand_t *significand)
   if(significand != (significand_t *) 0)
   {
     int i;
-    for(i = 0; (i < SIGNIFICAND_SECTIONS) && (significand->s[i] == 0); i++);
-    if(i == SIGNIFICAND_SECTIONS)
+    for(i = 0; (i < SIGNIFICAND_SECTIONS_INTERNAL) && (significand->s[i] == 0); i++);
+    if(i == SIGNIFICAND_SECTIONS_INTERNAL)
     {
       retcode = true;
     }
@@ -340,7 +360,7 @@ bcd_sig_copy(significand_t *src,
   if( (src != (significand_t *) 0) && (dst != (significand_t *) 0) )
   {
     int i;
-    for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+    for(i = 0; i < SIGNIFICAND_SECTIONS_INTERNAL; i++)
     {
       dst->s[i] = src->s[i];
     }
@@ -381,7 +401,7 @@ bcd_sig_cmp(significand_t *src,
   if( (src != (significand_t *) 0) && (dst != (significand_t *) 0) )
   {
     int i;
-    for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+    for(i = 0; i < SIGNIFICAND_SECTIONS_INTERNAL; i++)
     {
       significand_section_t src_section = src->s[i];
       if(src_mask != (significand_t *) 0)
@@ -395,8 +415,8 @@ bcd_sig_cmp(significand_t *src,
         dst_section &= dst_mask->s[i];
       }
 
-      if( src_section  < dst_section) { retval = -1; break; }
-      if( src_section  > dst_section) { retval =  1; break; }
+      if( src_section < dst_section) { retval = -1; break; }
+      if( src_section > dst_section) { retval =  1; break; }
     }
   }
 
@@ -430,9 +450,9 @@ bcd_sig_num_digits(significand_t *significand)
     else
     {
       int i;
-      for(i = BCD_NUM_DIGITS; i > 0; i--)
+      for(i = BCD_NUM_DIGITS_INTERNAL; i > 0; i--)
       {
-        if(bcd_sig_get_byte(significand, (i - 1)) != 0)
+        if(bcd_sig_get_digit(significand, (i - 1)) != 0)
         {
           retval = i;
           break;
@@ -443,10 +463,6 @@ bcd_sig_num_digits(significand_t *significand)
 
   return retval;
 }
-
-/******************************************************************************
- ******************************** PRIVATE API *********************************
- *****************************************************************************/
 
 #if defined(DEBUG)
 /* This function will convert a significand_section_t to an ASCII string.  It
@@ -492,7 +508,7 @@ bcd_sig_section_to_str(significand_section_t section)
     int i;
     for(i = 0; i < SIGNIFICAND_DIGITS_PER_SECTION; i++)
     {
-      char c = bcd_sect_get_byte(section, i);
+      char c = bcd_sect_get_digit(section, i);
       retval[i] = (c > 9) ? (c + 0x37) : (c + 0x30);
     }
     retval[i] = 0;
@@ -534,7 +550,7 @@ bcd_sig_to_str(significand_t *significand)
     /* We allocate the pointer the first time we need it. */
     if(sig_msgs[sig_msgs_index] == (char *) 0)
     {
-      sig_msgs[sig_msgs_index] = (char *) malloc(BCD_NUM_DIGITS + 1);
+      sig_msgs[sig_msgs_index] = (char *) malloc(BCD_NUM_DIGITS_INTERNAL + 1);
     }
 
     if(sig_msgs[sig_msgs_index] != (char *) 0)
@@ -545,7 +561,7 @@ bcd_sig_to_str(significand_t *significand)
 
       /* Create the string now. */
       int i;
-      for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+      for(i = 0; i < SIGNIFICAND_SECTIONS_INTERNAL; i++)
       {
         strcat(retval, bcd_sig_section_to_str(significand->s[i]));
       }
@@ -655,7 +671,7 @@ bcd_to_str_decimal(significand_t *significand,
       if(digit_count == 0)
       {
         /* Count the non-zero digits in the significand. */
-        int i = bcd_sig_num_digits(significand);
+        int i = min(bcd_sig_num_digits(significand), BCD_NUM_DIGITS);
         if(i == -1) break;
 
         digit_count = max(i, (exponent + 1));
@@ -664,7 +680,7 @@ bcd_to_str_decimal(significand_t *significand,
       int digit_position = 0;
       for( ; digit_count > 0; digit_count--)
       {
-        char c = bcd_sig_get_byte(significand, digit_position++);
+        char c = bcd_sig_get_digit(significand, digit_position++);
 
         /* Insert the digit. */
         if(--buf_size == 0) { break; } else { buf[buf_x++] = (c | 0x30); }
@@ -789,7 +805,7 @@ bcd_significand_add(significand_t *val1,
       {
         for(carry_digit = 0; carry_digit < BCD_NUM_DIGITS; carry_digit++)
         {
-          if( (bcd_sig_get_byte(val1, carry_digit) != 0) || (bcd_sig_get_byte(val2, carry_digit) != 0) )
+          if( (bcd_sig_get_digit(val1, carry_digit) != 0) || (bcd_sig_get_digit(val2, carry_digit) != 0) )
           {
             break;
           }
@@ -802,7 +818,7 @@ bcd_significand_add(significand_t *val1,
       /* Loop through all of the significand_section_t chunks, starting with
        * the least significant. */
       int i;
-      for(i = (SIGNIFICAND_SECTIONS - 1); i >= 0; i--)
+      for(i = (SIGNIFICAND_SECTIONS_INTERNAL - 1); i >= 0; i--)
       {
         significand_large_section_t sum;
 
@@ -835,7 +851,7 @@ bcd_significand_add(significand_t *val1,
        * was a carry at the end. */
       if(carry != (bool *) 0)
       {
-        *carry = (carry_digit > 0) ? ((bcd_sig_get_byte(dst, (carry_digit - 1)) != 0ll) ? true : false) : 0;
+        *carry = (carry_digit > 0) ? ((bcd_sig_get_digit(dst, (carry_digit - 1)) != 0ll) ? true : false) : 0;
       }
 
       DBG_PRINT("%s() RESULT: %s: 0x%X\n", __func__, bcd_sig_to_str(dst), *overflow);
@@ -871,14 +887,14 @@ bcd_tens_complement(significand_t *src,
 
     /* Do a 9's complement first. */
     int i;
-    for(i = 0; i < SIGNIFICAND_SECTIONS; i++)
+    for(i = 0; i < SIGNIFICAND_SECTIONS_INTERNAL; i++)
     {
       dst->s[i] = SIGNIFICAND_SECT_TENS_COMPLEMENT_VAL - src->s[i];
     }
 
     /* Now add 1 to complete the 10's complement. */
     uint8_t overflow;
-    significand_t one = { .s[SIGNIFICAND_SECTIONS - 1] = 1 };
+    significand_t one = { .s[SIGNIFICAND_SECTIONS_INTERNAL - 1] = 1 };
     retcode = bcd_significand_add(dst, &one, dst, NULL, &overflow);
     DBG_PRINT("%s(): dst: %s.\n", __func__, bcd_sig_to_str(dst));
   }
@@ -971,7 +987,7 @@ bcd_sig_remove_leading_zeroes(significand_t *sig,
      * to detect failures. */
     retcode = true;
 
-    while((bcd_sig_is_zero(sig) == false) && (bcd_sig_get_byte(sig, 0) == 0))
+    while((bcd_sig_is_zero(sig) == false) && (bcd_sig_get_digit(sig, 0) == 0))
     {
       if((retcode = bcd_shift_significand(sig, -1)) != true)
       {
@@ -1052,7 +1068,7 @@ bcd_op_add(bcd *op1,
         if(overflow != 0)
         {
           if((retcode = bcd_shift_significand(sig1, 1)) != true) break;
-          if((retcode = bcd_sig_set_byte(sig1, 0, overflow)) != true) break;
+          if((retcode = bcd_sig_set_digit(sig1, 0, overflow)) != true) break;
           op1->exponent++;
         }
       }
@@ -1227,8 +1243,8 @@ bcd_op_mul(bcd *op1,
            * 4. Convert the hex result into a base-10 result (res_digit) and
            *    remainder (rem_digit).
            */
-          uint8_t a_byte = bcd_sig_get_byte(sig1, (a_digit - 1));
-          uint8_t b_byte = bcd_sig_get_byte(sig2, (b_digit - 1));
+          uint8_t a_byte = bcd_sig_get_digit(sig1, (a_digit - 1));
+          uint8_t b_byte = bcd_sig_get_digit(sig2, (b_digit - 1));
           if((a_byte == 0) || (b_byte == 0)) continue;
           uint8_t prod = a_byte * b_byte;
           uint8_t res_digit = (prod / 10);
@@ -1257,14 +1273,14 @@ bcd_op_mul(bcd *op1,
           result_digit %= BCD_NUM_DIGITS;
           significand_t remain;
           significand_t result;
-          if((retcode = bcd_sig_initialize(&remain))                        != true) break;
-          if((retcode = bcd_sig_initialize(&result))                        != true) break;
-          if((retcode = bcd_sig_set_byte(&remain, remain_digit, rem_digit)) != true) break;
-          if((retcode = bcd_sig_set_byte(&result, result_digit, res_digit)) != true) break;
+          if((retcode = bcd_sig_initialize(&remain))                         != true) break;
+          if((retcode = bcd_sig_initialize(&result))                         != true) break;
+          if((retcode = bcd_sig_set_digit(&remain, remain_digit, rem_digit)) != true) break;
+          if((retcode = bcd_sig_set_digit(&result, result_digit, res_digit)) != true) break;
 
           /* Create this, in case we need to do an overflow addition. */
           significand_t overflo_val = { .s = { 0 } };
-          overflo_val.s[SIGNIFICAND_SECTIONS - 1] = 1;
+          overflo_val.s[SIGNIFICAND_SECTIONS_INTERNAL - 1] = 1;
 
           /* Now we're ready to add remain and result to the result_hi:result_lo total. */
           uint8_t overflow;
@@ -1300,10 +1316,10 @@ bcd_op_mul(bcd *op1,
       op1->significand = result_lo;
       while(bcd_sig_is_zero(&result_hi) == false)
       {
-        if((retcode = bcd_shift_significand(&op1->significand, 1)) != true) { break; }
-        uint8_t c = bcd_sig_get_byte(&result_hi, (BCD_NUM_DIGITS - 1));
-        if((retcode = bcd_shift_significand(&result_hi, 1))        != true) { break; }
-        if((retcode = bcd_sig_set_byte(&op1->significand, 0, c))   != true) { break; }
+        if((retcode = bcd_shift_significand(&op1->significand, 1))  != true) { break; }
+        uint8_t c = bcd_sig_get_digit(&result_hi, (BCD_NUM_DIGITS - 1));
+        if((retcode = bcd_shift_significand(&result_hi, 1))         != true) { break; }
+        if((retcode = bcd_sig_set_digit(&op1->significand, 0, c))   != true) { break; }
       }
 
       /* If the result is zero, then set the exponent to zero and leave. */
@@ -1387,10 +1403,10 @@ bcd_op_div(bcd *op1,
       /* Set mask_hi to mark the range of significant digits in the divisor. */
       {
         int i;
-        if(bcd_sig_set_byte(&mask_hi, 0, 0xF) != true) break;
+        if(bcd_sig_set_digit(&mask_hi, 0, 0xF) != true) break;
         for(i = 0; (i < BCD_NUM_DIGITS) && (bcd_sig_cmp(&divisor_hi, &mask_hi, &divisor_hi, 0) != 0); i++)
         {
-          if(bcd_sig_set_byte(&mask_hi, i, 0xF) != true) break;
+          if(bcd_sig_set_digit(&mask_hi, i, 0xF) != true) break;
         }
         DBG_PRINT("%s() MASK: Divisor %s: Mask %s\n", __func__, bcd_sig_to_str(&divisor_hi), bcd_sig_to_str(&mask_hi));
       }
@@ -1398,7 +1414,7 @@ bcd_op_div(bcd *op1,
       /* This identifies the digit position where we're currently calculating
        * the quotient.  Each time we subtract the divisor from the dividend we
        * will add 1 to the quotient. */
-      if(bcd_sig_set_byte(&add_one_hi, 0, 1) != true) break;
+      if(bcd_sig_set_digit(&add_one_hi, 0, 1) != true) break;
 
       /* Loop here until we're done with the division.  We go until we have as
        * much of 2 full significands as possible.  This should give us at least
@@ -1433,7 +1449,7 @@ bcd_op_div(bcd *op1,
           {
             significand_t one;
             if(bcd_sig_initialize(&one) != true)  break;
-            if(bcd_sig_set_byte(&one, (BCD_NUM_DIGITS - 1), 0x1) != true) break;
+            if(bcd_sig_set_digit(&one, (BCD_NUM_DIGITS - 1), 0x1) != true) break;
             if(bcd_tens_complement(&one, &value_tens)                                        == false) break;
             if(bcd_significand_add(&dividend_hi, &value_tens, &dividend_hi, NULL, &overflow) == false) break;
           }
@@ -1448,22 +1464,22 @@ bcd_op_div(bcd *op1,
         }
 
         uint8_t c;
-        if((c = bcd_sig_get_byte(&divisor_hi, (BCD_NUM_DIGITS - 1))) == 0xF) break;
+        if((c = bcd_sig_get_digit(&divisor_hi, (BCD_NUM_DIGITS - 1))) == 0xF) break;
         if(bcd_shift_significand(&divisor_hi,       1) == false) break;
         if(bcd_shift_significand(&divisor_lo,       1) == false) break;
-        if(bcd_sig_set_byte(&divisor_lo, 0, c) == false) break;
+        if(bcd_sig_set_digit(&divisor_lo, 0, c) == false) break;
 
-        if((c = bcd_sig_get_byte(&add_one_hi, (BCD_NUM_DIGITS - 1))) == 0xF) break;
+        if((c = bcd_sig_get_digit(&add_one_hi, (BCD_NUM_DIGITS - 1))) == 0xF) break;
         if(bcd_shift_significand(&add_one_hi, 1) == false) break;
         if(bcd_shift_significand(&add_one_lo, 1) == false) break;
-        if(bcd_sig_set_byte(&add_one_lo, 0, c) == false) break;
+        if(bcd_sig_set_digit(&add_one_lo, 0, c) == false) break;
 
-        c = bcd_sig_get_byte(&mask_hi, (BCD_NUM_DIGITS - 1));
+        c = bcd_sig_get_digit(&mask_hi, (BCD_NUM_DIGITS - 1));
         if(bcd_shift_significand(&mask_hi, 1) == false) break;
-        if(bcd_sig_set_byte(&mask_hi, 0, 0xF) == false) break;
-        if(bcd_sig_get_byte(&mask_lo, (BCD_NUM_DIGITS - 1)) == 0xF) { done = true; }
+        if(bcd_sig_set_digit(&mask_hi, 0, 0xF) == false) break;
+        if(bcd_sig_get_digit(&mask_lo, (BCD_NUM_DIGITS - 1)) == 0xF) { done = true; }
         if(bcd_shift_significand(&mask_lo, 1) == false) break;
-        if(bcd_sig_set_byte(&mask_lo, 0, c) == false) break;
+        if(bcd_sig_set_digit(&mask_lo, 0, c) == false) break;
       }
       DBG_PRINT("%s() RESULT: %s:%s\n", __func__, bcd_sig_to_str(&result_hi), bcd_sig_to_str(&result_lo));
 
@@ -1474,13 +1490,13 @@ bcd_op_div(bcd *op1,
       {
         bool shift_ok = true;
         op1->exponent -= op2->exponent;
-        while((bcd_sig_is_zero(&op1->significand) == false) && ((bcd_sig_get_byte(&op1->significand, 0)) == 0))
+        while((bcd_sig_is_zero(&op1->significand) == false) && ((bcd_sig_get_digit(&op1->significand, 0)) == 0))
         {
           char c;
-          if(bcd_shift_significand(&op1->significand, -1) != true)                  { shift_ok = false; break; }
-          if((c = bcd_sig_get_byte(&result_lo, 0)) == 0xF)                          { shift_ok = false; break; }
-          if(bcd_sig_set_byte(&op1->significand, (BCD_NUM_DIGITS - 1), c) == false) { shift_ok = false; break; }
-          if(bcd_shift_significand(&result_lo, -1) != true)                         { shift_ok = false; break; }
+          if(bcd_shift_significand(&op1->significand, -1) != true)                   { shift_ok = false; break; }
+          if((c = bcd_sig_get_digit(&result_lo, 0)) == 0xF)                           { shift_ok = false; break; }
+          if(bcd_sig_set_digit(&op1->significand, (BCD_NUM_DIGITS - 1), c) == false) { shift_ok = false; break; }
+          if(bcd_shift_significand(&result_lo, -1) != true)                          { shift_ok = false; break; }
           op1->exponent--;
         }
         if(shift_ok == false) break;
@@ -1492,12 +1508,12 @@ bcd_op_div(bcd *op1,
       /* Now we need to round the result (if necessary).  We'll use the regular
        * bcd_op_add() function to do that step. */
       char c;
-      if((c = bcd_sig_get_byte(&result_lo, 0)) == 0xF) break;
+      if((c = bcd_sig_get_digit(&result_lo, 0)) == 0xF) break;
       if(c > 4)
       {
         bcd *round;
         if((round = bcd_new()) == (bcd *) NULL) break;
-        if(bcd_sig_set_byte(&round->significand, (BCD_NUM_DIGITS - 1), 1) == false) break;
+        if(bcd_sig_set_digit(&round->significand, (BCD_NUM_DIGITS - 1), 1) == false) break;
         round->sign = op1->sign;
         round->exponent = op1->exponent;
         if(bcd_op_add(op1, round) == false) break;
@@ -1687,7 +1703,7 @@ bcd_add_char(bcd *this,
           this->exponent++;
         }
 
-        bcd_sig_set_byte(&this->significand, this->char_count++, c);
+        bcd_sig_set_digit(&this->significand, this->char_count++, c);
         DBG_PRINT("%s(): %s %d\n", __func__, bcd_sig_to_str(&this->significand), this->exponent);
       }
 
@@ -1910,9 +1926,9 @@ bcd_import(bcd     *this,
 
   do
   {
-    if(this == (bcd *) 0)                                         { break; }
+    if(this == (bcd *) 0)                                          { break; }
 
-    if(bcd_sig_initialize(&this->significand) == false)           { break; }
+    if(bcd_sig_initialize(&this->significand) == false)            { break; }
 
     /* Set the sign, and then set src = |src|. */
     this->sign = 0;
@@ -1927,9 +1943,9 @@ bcd_import(bcd     *this,
     {
       uint8_t digit = (src % 10);
 
-      if(bcd_shift_significand(&this->significand, 1) == false)   { break; }
+      if(bcd_shift_significand(&this->significand, 1) == false)    { break; }
 
-      if(bcd_sig_set_byte(&this->significand, 0, digit) == false) { break; }
+      if(bcd_sig_set_digit(&this->significand, 0, digit) == false) { break; }
 
       if((src /= 10) != 0)
       {
@@ -1978,7 +1994,7 @@ bcd_export(bcd     *this,
     int offset;
     for(offset = 0; offset <= this->exponent; offset++)
     {
-      uint8_t digit = bcd_sig_get_byte(&this->significand, offset);
+      uint8_t digit = bcd_sig_get_digit(&this->significand, offset);
 
       *dst *= 10;
       *dst += digit;
@@ -2020,45 +2036,61 @@ bcd_test(void)
       significand_section_t test_sect = { 0xFFFFFFFF };
       for(j = 0; j < SIGNIFICAND_DIGITS_PER_SECTION; j++)
       {
-        if(bcd_sect_set_byte(&test_sect, j, (j + 1)) != true)                                 return false;
+        if(bcd_sect_set_digit(&test_sect, j, (j + 1)) != true)                                return false;
       }
       if(test_sect != 0x12345678)                                                             return false;
       for(j = 0; j < SIGNIFICAND_DIGITS_PER_SECTION; j++)
       {
-        if(bcd_sect_get_byte(test_sect, j) != (j + 1))                                        return false;
+        if(bcd_sect_get_digit(test_sect, j) != (j + 1))                                       return false;
       }
       int arg2 = (SIGNIFICAND_DIGITS_PER_SECTION + 1);
-      if(bcd_sect_set_byte(&test_sect, arg2, 1) != false)                                     return false;
-      if(bcd_sect_get_byte(test_sect, arg2) != 0xF)                                           return false;
+      if(bcd_sect_set_digit(&test_sect, arg2, 1) != false)                                    return false;
+      if(bcd_sect_get_digit(test_sect, arg2) != 0xF)                                          return false;
     }
 
     {
       printf("  Sig Tests.\n");
       int j;
       significand_t test_sig = { .s = { 0xFFFFFFFF } };
-      for(j = 0; j < BCD_NUM_DIGITS; j++)
+      for(j = 0; j < BCD_NUM_DIGITS_INTERNAL; j++)
       {
-        if(bcd_sig_set_byte(&test_sig, j, (j + 1)) != true)                                   return false;
+        if(bcd_sig_set_digit(&test_sig, j, ((j + 1) & 0xF)) != true)                          return false;
       }
-      if(test_sig.s[0] != 0x12345678)                                                         return false;
-      if(test_sig.s[1] != 0x9ABCDEF0)                                                         return false;
-      for(j = 0; j < BCD_NUM_DIGITS; j++)
+      significand_section_t sig_test_data[2] = { 0x12345678, 0x9ABCDEF0 };
+      for(j = 0; j < SIGNIFICAND_SECTIONS_INTERNAL; j++)
       {
-        if(bcd_sig_get_byte(&test_sig, j) != ((j + 1) & 0xF))                                 return false;
+        if(test_sig.s[j] != sig_test_data[(j & 0x1)])                                         return false;
       }
-      int arg2 = (BCD_NUM_DIGITS + 1);
-      if(bcd_sig_set_byte(&test_sig, arg2, 1) != false)                                       return false;
-      if(bcd_sig_get_byte(&test_sig, arg2) != 0xF)                                            return false;
+      for(j = 0; j < BCD_NUM_DIGITS_INTERNAL; j++)
+      {
+        if(bcd_sig_get_digit(&test_sig, j) != ((j + 1) & 0xF))                                return false;
+      }
+      int arg2 = BCD_NUM_DIGITS_INTERNAL;
+      if(bcd_sig_set_digit(&test_sig, arg2, 1) != false)                                      return false;
+      if(bcd_sig_get_digit(&test_sig, arg2) != 0xF)                                           return false;
     }
 
     {
       printf("  Sig Manipulation Tests.\n");
-      significand_t sig1 = { .s = { 0x12345678, 0xFEDCBA98 } };
-      if((sig1.s[0] != 0x12345678) || (sig1.s[1] != 0xFEDCBA98))                              return false;
+      int j;
+      significand_section_t sig_test_data1[2] = { 0x12345678, 0xFEDCBA98 };
+      significand_section_t sig_test_data2[4] = { 0x00012345, 0x678FEDCB, 0xA9812345, 0x678FEDCB };
+      significand_section_t sig_test_data3[4] = { 0x45678FED, 0xCBA98123, 0x45678FED, 0xCB000000 };
+      significand_t sig1 = { .s = { 0 } };
+      for(j = 0; j < SIGNIFICAND_SECTIONS_INTERNAL; j++)
+      {
+        sig1.s[j] = sig_test_data1[(j & 1)];
+      }
       if(bcd_shift_significand(&sig1, 3) != true)                                             return false;
-      if((sig1.s[0] != 0x00012345) || (sig1.s[1] != 0x678FEDCB))                              return false;
+      for(j = 0; j < SIGNIFICAND_SECTIONS_INTERNAL; j++)
+      {
+        if(sig1.s[j] != sig_test_data2[j])                                                    return false;
+      }
       if(bcd_shift_significand(&sig1, -6) != true)                                            return false;
-      if((sig1.s[0] != 0x45678FED) || (sig1.s[1] != 0xCB000000))                              return false;
+      for(j = 0; j < SIGNIFICAND_SECTIONS_INTERNAL; j++)
+      {
+        if(sig1.s[j] != sig_test_data3[j])                                                    return false;
+      }
       if(bcd_sig_is_zero(&sig1) != false)                                                     return false;
       if(bcd_sig_initialize(&sig1) != true)                                                   return false;
       if(bcd_sig_is_zero(&sig1) != true)                                                      return false;
@@ -2166,6 +2198,9 @@ bcd_test(void)
     { "BCD_ADD_19", bcd_op_add,                "1.0000134s"        ,                 ".045"             ,                    "-0.9550134"             },
     { "BCD_ADD_20", bcd_op_add, "9999999999999999"                 ,                "1"                 ,                     "1e+16"                 }, // Overflow
     { "BCD_ADD_21", bcd_op_add,         "99999999"                 ,                "1"                 ,           "100,000,000"                     }, // Carry up to next sect.
+    { "BCD_ADD_22", bcd_op_add, "1111111111111111"                 ,                 ".9"               , "1,111,111,111,111,112"                     }, // Carry past the end.
+    { "BCD_ADD_23", bcd_op_add, "9999999999999999"                 ,                 ".9"               ,                     "1e+16"                 }, // Carry all the way up.
+    { "BCD_ADD_24", bcd_op_add, "6666666666666666"                 ,                 ".9"               , "6,666,666,666,666,670"                     }, // Carry a little bit.
 
     { "BCD_SUB_01", bcd_op_sub,                "5"                 ,                "2"                 ,                     "3"                     }, // Debug.
     { "BCD_SUB_02", bcd_op_sub,                "0"                 ,                "1"                 ,                    "-1"                     }, // Neg num.
@@ -2288,7 +2323,7 @@ bcd_test(void)
     bcd *o1 = bcd_new(), *o2 = bcd_new();
     if(bcd_sig_initialize(&o1->significand) != true)                                          return false;
     if(bcd_sig_initialize(&o2->significand) != true)                                          return false;
-    if(bcd_sig_set_byte(&o1->significand, 0, 1) != true)                                      return false;
+    if(bcd_sig_set_digit(&o1->significand, 0, 1) != true)                                     return false;
     o1->exponent = 1; o1->got_decimal_point = 0; o1->sign = false;
     o2->exponent = 1; o2->got_decimal_point = 0; o2->sign = false;
     if(bcd_op_div(o1, o2) != false)                                                           return false;
@@ -2297,9 +2332,9 @@ bcd_test(void)
     int x;
     for(x = 0; x < BCD_NUM_DIGITS; x++) 
     {
-      if(bcd_sig_set_byte(&o1->significand, x, 9) != true)                                    return false;
+      if(bcd_sig_set_digit(&o1->significand, x, 9) != true)                                   return false;
     }
-    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                                      return false;
+    if(bcd_sig_set_digit(&o2->significand, 0, 1) != true)                                     return false;
     o1->exponent = 15; o1->got_decimal_point = 0; o1->sign = false;
     o2->exponent =  2; o2->got_decimal_point = 0; o2->sign = false;
     if(bcd_op_mul(o1, o2) != true)                                                            return false;
@@ -2308,7 +2343,7 @@ bcd_test(void)
     if((retcode = (strcmp("9.999999999999999e+17", buf) == 0)) != true)                       return false;
 
     printf("Now add a very small number.\n");
-    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                                      return false;
+    if(bcd_sig_set_digit(&o2->significand, 0, 1) != true)                                     return false;
     o2->exponent =  1; o2->got_decimal_point = 0; o2->sign = false;
     if(bcd_op_add(o1, o2) != true)                                                            return false;
     memset(buf, 0, sizeof(buf));
@@ -2317,10 +2352,10 @@ bcd_test(void)
 
     printf("bcd_copy() and bcd_cmp().\n");
     if(bcd_sig_initialize(&o1->significand) != true)                                          return false;
-    if(bcd_sig_set_byte(&o1->significand, 0, 1) != true)                                      return false;
+    if(bcd_sig_set_digit(&o1->significand, 0, 1) != true)                                     return false;
     o1->exponent =  0; o1->got_decimal_point = 0; o1->sign = false;
     if(bcd_sig_initialize(&o2->significand) != true)                                          return false;
-    if(bcd_sig_set_byte(&o2->significand, 0, 1) != true)                                      return false;
+    if(bcd_sig_set_digit(&o2->significand, 0, 1) != true)                                     return false;
     o2->exponent =  0; o2->got_decimal_point = 0; o2->sign = false;
     if(bcd_cmp(o1, o2) != 0)                                                                  return false;
     o1->sign = true;
@@ -2331,7 +2366,7 @@ bcd_test(void)
     if(bcd_cmp(o1, o2) !=  1)                                                                 return false;
     for(x = 0; x < (BCD_NUM_DIGITS - 1); x++)
     {
-      if(bcd_sig_set_byte(&o1->significand, x, 9) != true)                                    return false;
+      if(bcd_sig_set_digit(&o1->significand, x, 9) != true)                                   return false;
     }
     o1->exponent = 0; o1->sign = false;
     if(bcd_copy(o1, o2) != true)                                                              return false;
