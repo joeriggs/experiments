@@ -1406,10 +1406,18 @@ bcd_op_div(bcd *op1,
       bool done = false;
       while(done == false)
       {
-        /* Calculate a quotient digit.  Keep subtracting and looping. */
-        while( ((bcd_sig_is_zero(&dividend_hi) == false) && (bcd_sig_cmp(&divisor_hi, &mask_hi, &dividend_hi, &mask_hi) <= 0)) ||
+        /* Loop here as long as dividend (with mask) is >= divisor (with mask).
+         * There are 2 different tests that we do in order to figure that out:
+         * 1. dividend_hi > divisor_hi.
+         * 2. (dividend_hi == divisor_hi) && (dividend_lo >= divisor_lo). */
+        while( (bcd_sig_cmp(&divisor_hi, &mask_hi, &dividend_hi, &mask_hi) < 0) ||
               ((bcd_sig_cmp(&divisor_hi, &mask_hi, &dividend_hi, &mask_hi) == 0) && (bcd_sig_cmp(&divisor_lo, &mask_lo, &dividend_lo, &mask_lo) <= 0)) )
         {
+          DBG_PRINT("%s() LOOP_TOP: DIVIDEND: %s:%s\n", __func__, bcd_sig_to_str(&dividend_hi), bcd_sig_to_str(&dividend_lo));
+          DBG_PRINT("%s() LOOP_TOP: DIVISOR:  %s:%s\n", __func__, bcd_sig_to_str(&divisor_hi),  bcd_sig_to_str(&divisor_lo));
+          DBG_PRINT("%s() LOOP_TOP: MASK:     %s:%s\n", __func__, bcd_sig_to_str(&mask_hi),     bcd_sig_to_str(&mask_lo));
+          DBG_PRINT("%s() LOOP_TOP: RESULT:   %s:%s\n", __func__, bcd_sig_to_str(&result_hi),   bcd_sig_to_str(&result_lo));
+
           uint8_t overflow;
           significand_t value_tens;
 
@@ -1418,20 +1426,25 @@ bcd_op_div(bcd *op1,
           if(bcd_significand_add(res, one, res, NULL, &overflow) == false) break;
 
           bool borrow = (bcd_sig_cmp(&dividend_lo, 0, &divisor_lo, 0) < 0) ? true : false;
-          if(bcd_tens_complement(&divisor_lo, &value_tens)                                               == false) break;
-          if(bcd_significand_add(&dividend_lo, &value_tens, &dividend_lo, NULL, &overflow)                   == false) break;
+          if(bcd_tens_complement(&divisor_lo, &value_tens)                                   == false) break;
+          if(bcd_significand_add(&dividend_lo, &value_tens, &dividend_lo, NULL, &overflow)   == false) break;
 
           if(borrow == true)
           {
             significand_t one;
             if(bcd_sig_initialize(&one) != true)  break;
             if(bcd_sig_set_byte(&one, (BCD_NUM_DIGITS - 1), 0x1) != true) break;
-            if(bcd_tens_complement(&one, &value_tens)                                             == false) break;
-            if(bcd_significand_add(&dividend_hi, &value_tens, &dividend_hi, NULL, &overflow)                 == false) break;
+            if(bcd_tens_complement(&one, &value_tens)                                        == false) break;
+            if(bcd_significand_add(&dividend_hi, &value_tens, &dividend_hi, NULL, &overflow) == false) break;
           }
 
-          if(bcd_tens_complement(&divisor_hi, &value_tens)                                               == false) break;
-          if(bcd_significand_add(&dividend_hi, &value_tens, &dividend_hi, NULL, &overflow)                   == false) break;
+          if(bcd_tens_complement(&divisor_hi, &value_tens)                                   == false) break;
+          if(bcd_significand_add(&dividend_hi, &value_tens, &dividend_hi, NULL, &overflow)   == false) break;
+
+          DBG_PRINT("%s() LOOP_BOT: DIVIDEND: %s:%s\n", __func__, bcd_sig_to_str(&dividend_hi), bcd_sig_to_str(&dividend_lo));
+          DBG_PRINT("%s() LOOP_BOT: DIVISOR:  %s:%s\n", __func__, bcd_sig_to_str(&divisor_hi),  bcd_sig_to_str(&divisor_lo));
+          DBG_PRINT("%s() LOOP_BOT: MASK:     %s:%s\n", __func__, bcd_sig_to_str(&mask_hi),     bcd_sig_to_str(&mask_lo));
+          DBG_PRINT("%s() LOOP_BOT: RESULT:   %s:%s\n", __func__, bcd_sig_to_str(&result_hi),   bcd_sig_to_str(&result_lo));
         }
 
         uint8_t c;
@@ -2216,10 +2229,11 @@ bcd_test(void)
     { "BCD_DIV_09", bcd_op_div,                 ".45832"           ,               "32s"                ,                    "-0.0143225"             }, // <1 / Whole
     { "BCD_DIV_10", bcd_op_div, "9999999999999999"                 ,                 ".000000000000001" ,                     "9.999999999999999e+30" }, // Lrg / Sml
     { "BCD_DIV_11", bcd_op_div,                 ".000000000000001" , "9999999999999999"                 ,                     "1e-31"                 }, // Sml / Lrg
-    { "BCD_DIV_12", bcd_op_div,      "8745963210"                  ,              "101"                 ,            "86,593,695.14851485"            }, //
-    { "BCD_DIV_13", bcd_op_div,              "22"                  ,                "7"                 ,                     "3.142857142857143"     }, // Pi-ish
-    { "BCD_DIV_14", bcd_op_div,               "2"                  ,                "1.414213562373095" ,                     "1.414213562373095"     }, // Square root of 2.
+    { "BCD_DIV_12", bcd_op_div,       "8745963210"                 ,              "101"                 ,            "86,593,695.14851485"            }, //
+    { "BCD_DIV_13", bcd_op_div,               "22"                 ,                "7"                 ,                     "3.142857142857143"     }, // Pi-ish
+    { "BCD_DIV_14", bcd_op_div,                "2"                 ,                "1.414213562373095" ,                     "1.414213562373095"     }, // Square root of 2.
     { "BCD_DIV_15", bcd_op_div, "9999999999999999"                 , "7777777777777777"                 ,                     "1.285714285714286"     }, // 16 / 16 = 16 digits.
+    { "BCD_DIV_16", bcd_op_div,                "3"                 , "1834944619757441"                 ,                     "1.634926726233605e-15" }, // Bug.
   };
   size_t bcd_math_test_size = (sizeof(math_tests) / sizeof(bcd_math_test));
 

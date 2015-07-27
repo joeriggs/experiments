@@ -610,6 +610,7 @@ fp_exp_test(void)
     { "FP_EXP_19",  "0"    ,   "0"      ,                     "1"                     }, // zero base and exponent.
     { "FP_EXP_20",  "2"    , "199"      ,                     "8.034690221294951e+59" }, // big exponent.
     { "FP_EXP_21", "25.43" ,   "1"      ,                    "25.43"                  }, // X ^ 1 = X.
+    { "FP_EXP_22",  "3"    ,  "12.345"  ,               "776,357.74428398"            }, // Stolen from calculator.c.
   };
   size_t tests_size = (sizeof(tests) / sizeof(fp_exp_test));
 
