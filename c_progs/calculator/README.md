@@ -11,6 +11,27 @@ The calculator has been tested on the following platforms:
 * CentOS 6.6 (32-bit) - gcc version 4.4.7
 * CentOS 7.1 (64-bit) - gcc version 4.8.3
 
+How to Build
+------------
+
+If you want to build the calculator, simply type "make".  This will compile all of the source modules and produce a binary named **calculator**.
+
+There are 3 switches that you can add to the "make" command.  They are:
+
+* **TEST=1** - This switch will direct the Makefile to create a test program named **test**.  The test program will run through all of the unit tests that are contained at the bottom of each source code file.  Each file contains a function called **module**_test(), where **module** is the name of the source file.  For example, calculator.c contains a function called **calculator_test()**.  If you run "make TEST=1", you will run all of the tests.  The program is designed to exit immediately if one of the tests fails.  It will then exit with a return code of 1.  A successful test run will exit with a return code of 0.
+
+* **DEBUG=1** - This switch will direct the Makefile to create a **calculator** or **test** program with internal debug turned on.  This will buy you 2 things:
+
+  * It will build with optimization turned off and debug symbols turned on.  This allows you to debug the program with gdb.
+
+  * If will turn on console debug info.  There is a lot of console debug information in the source code files.  It is useful for debugging problems.  Note that bcd.c contains per-method debug info that is controlled via a series of **BCD_DBG_...** switches at the top of the module.
+
+* **clean** - Run this command if you want to clean up after a build.  This is particularly useful if you want to switch back and forth between running the real **calculator** program and running the **test** program.  For example:
+
+  * To switch from **calculator** to **test**, you run "make clean" followed by "make TEST=1".
+
+  * To switch from **test** to **calculator**, you run "make TEST=1 clean" followed by "make".
+
 Class Hierarchy
 ---------------
 

@@ -19,6 +19,21 @@
 #define min(a, b) ((a) < (b) ? (a) : (b))
 #define max(a, b) ((a) > (b) ? (a) : (b))
 
+#define BCD_DBG_STR_TO_DECIMAL       0x0001
+#define BCD_DBG_ADD_HALF_WIDTH       0x0002
+#define BCD_DBG_SIGNIFICAND_ADD      0x0004
+#define BCD_DBG_TENS_COMPLEMENT      0x0008
+#define BCD_DBG_MAKE_EXPONENTS_EQUAL 0x0010
+#define BCD_DBG_OP_ADD               0x0100
+#define BCD_DBG_OP_SUB               0x0200
+#define BCD_DBG_OP_MUL               0x0400
+#define BCD_DBG_OP_DIV               0x0800
+#define BCD_DBG_ADD_CHAR             0x1000
+#define BCD_DBG_TO_STR               0x2000
+
+#define BCD_DBG_PRINT_FLAGS BCD_DBG_TO_STR
+#define BCD_PRINT(FLAG, argc...) { if(FLAG & BCD_DBG_PRINT_FLAGS) { DBG_PRINT(argc); } }
+
 /******************************************************************************
  ****************************** CLASS DEFINITION ******************************
  *****************************************************************************/
@@ -631,7 +646,7 @@ bcd_to_str_decimal(significand_t *significand,
 
     do
     {
-      DBG_PRINT("%s(): %s, %d, %d, %d.\n", __func__,
+      BCD_PRINT(BCD_DBG_STR_TO_DECIMAL, "%s(): %s, %d, %d, %d.\n", __func__,
                 bcd_sig_to_str(significand), exponent, got_decimal_point, sign);
 
       /* If it's a negative number insert the sign now.  Even -0 gets a sign. */
@@ -733,7 +748,7 @@ bcd_add_half_width(significand_section_t        val1,
 
   if(dst != (significand_large_section_t *) 0)
   {
-    DBG_PRINT("%s(%s %s)\n", __func__, bcd_sig_section_to_str(val1), bcd_sig_section_to_str(val2));
+    BCD_PRINT(BCD_DBG_ADD_HALF_WIDTH, "%s(%s %s)\n", __func__, bcd_sig_section_to_str(val1), bcd_sig_section_to_str(val2));
     significand_large_section_t t1 = val1 + SIGNIFICAND_ADD_HALF_VAL1;
     significand_large_section_t t2 = t1 + val2;
     significand_large_section_t t3 = t1 ^ val2;
@@ -741,7 +756,7 @@ bcd_add_half_width(significand_section_t        val1,
     significand_large_section_t t5 = ~t4 & SIGNIFICAND_ADD_HALF_VAL2;
     significand_large_section_t t6 = (t5 >> 2) | (t5 >> 3);
     *dst = t2 - t6;
-    DBG_PRINT("%s(): SUM %s:%s.\n", __func__,
+    BCD_PRINT(BCD_DBG_ADD_HALF_WIDTH, "%s(): SUM %s:%s.\n", __func__,
               bcd_sig_section_to_str((*dst) >> (SIGNIFICAND_DIGITS_PER_SECTION * 4)),
               bcd_sig_section_to_str(*dst));
 
@@ -793,7 +808,7 @@ bcd_significand_add(significand_t *val1,
       (     dst != (significand_t *) 0) &&
       (overflow != (uint8_t *) 0) )
   {
-    DBG_PRINT("%s(%s, %s)\n", __func__, bcd_sig_to_str(val1), bcd_sig_to_str(val2));
+    BCD_PRINT(BCD_DBG_SIGNIFICAND_ADD, "%s(%s, %s)\n", __func__, bcd_sig_to_str(val1), bcd_sig_to_str(val2));
 
     do
     {
@@ -825,7 +840,7 @@ bcd_significand_add(significand_t *val1,
         /* Add the 2 sections. */
         if((retcode = bcd_add_half_width(val1->s[i], val2->s[i], &sum)) != true) { break; }
         dst->s[i] = (sum & SIGNIFICAND_SECTION_MASK);
-        DBG_PRINT("%s() LOOP: %s\n", __func__, bcd_sig_section_to_str(dst->s[i]));
+        BCD_PRINT(BCD_DBG_SIGNIFICAND_ADD, "%s() LOOP: %s\n", __func__, bcd_sig_section_to_str(dst->s[i]));
 
         /* Handle carry. */
         if((sum >> (SIGNIFICAND_DIGITS_PER_SECTION * 4)) > 0)
@@ -845,7 +860,7 @@ bcd_significand_add(significand_t *val1,
         }
       }
 
-      DBG_PRINT("%s() AFTER LOOP: %s: 0x%X\n", __func__, bcd_sig_to_str(dst), *overflow);
+      BCD_PRINT(BCD_DBG_SIGNIFICAND_ADD, "%s() AFTER LOOP: %s: 0x%X\n", __func__, bcd_sig_to_str(dst), *overflow);
 
       /* If the caller requested a carry check, check now to see if there
        * was a carry at the end. */
@@ -854,7 +869,7 @@ bcd_significand_add(significand_t *val1,
         *carry = (carry_digit > 0) ? ((bcd_sig_get_digit(dst, (carry_digit - 1)) != 0ll) ? true : false) : 0;
       }
 
-      DBG_PRINT("%s() RESULT: %s: 0x%X\n", __func__, bcd_sig_to_str(dst), *overflow);
+      BCD_PRINT(BCD_DBG_SIGNIFICAND_ADD, "%s() RESULT: %s: 0x%X\n", __func__, bcd_sig_to_str(dst), *overflow);
       retcode = true;
     } while(0);
   }
@@ -883,7 +898,7 @@ bcd_tens_complement(significand_t *src,
 
   if(dst != (significand_t *) 0)
   {
-    DBG_PRINT("%s(): src: %s.\n", __func__, bcd_sig_to_str(src));
+    BCD_PRINT(BCD_DBG_TENS_COMPLEMENT, "%s(): src: %s.\n", __func__, bcd_sig_to_str(src));
 
     /* Do a 9's complement first. */
     int i;
@@ -896,7 +911,7 @@ bcd_tens_complement(significand_t *src,
     uint8_t overflow;
     significand_t one = { .s[SIGNIFICAND_SECTIONS_INTERNAL - 1] = 1 };
     retcode = bcd_significand_add(dst, &one, dst, NULL, &overflow);
-    DBG_PRINT("%s(): dst: %s.\n", __func__, bcd_sig_to_str(dst));
+    BCD_PRINT(BCD_DBG_TENS_COMPLEMENT, "%s(): dst: %s.\n", __func__, bcd_sig_to_str(dst));
   }
 
   return retcode;
@@ -929,21 +944,21 @@ bcd_make_exponents_equal(significand_t *op1,
   if((op1 != (significand_t *) 0) && (exp1 != (int16_t *) 0) &&
      (op2 != (significand_t *) 0) && (exp2 != (int16_t *) 0))
   {
-    DBG_PRINT("%s(%p, %d, %p, %d).\n", __func__, op1, *exp1, op2, *exp2);
+    BCD_PRINT(BCD_DBG_MAKE_EXPONENTS_EQUAL,"%s(%p, %d, %p, %d).\n", __func__, op1, *exp1, op2, *exp2);
 
     significand_t *tgt_sig = (significand_t *) 0;
     int16_t       *tgt_exp = (int16_t *) 0;
     int shift = 0;
     if(*exp1 > *exp2)
     {
-      DBG_PRINT("%s(): Adjusting op2 so its exponent equals the op1 exponent.\n", __func__);
+      BCD_PRINT(BCD_DBG_MAKE_EXPONENTS_EQUAL,"%s(): Adjusting op2 so its exponent equals the op1 exponent.\n", __func__);
       tgt_sig = op2;
       tgt_exp = exp2;
       shift = *exp1 - *exp2;
     }
     else if(*exp1 < *exp2)
     {
-      DBG_PRINT("%s(): Adjusting op1 so its exponent equals the op2 exponent.\n", __func__);
+      BCD_PRINT(BCD_DBG_MAKE_EXPONENTS_EQUAL,"%s(): Adjusting op1 so its exponent equals the op2 exponent.\n", __func__);
       tgt_sig = op1;
       tgt_exp = exp1;
       shift = *exp2 - *exp1;
@@ -1027,7 +1042,7 @@ bcd_op_add(bcd *op1,
     {
       significand_t *sig1 = &op1->significand;
       significand_t *sig2 = &op2->significand;
-      DBG_PRINT("%s()           BEGIN: %s + %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
+      BCD_PRINT(BCD_DBG_OP_ADD, "%s()           BEGIN: %s + %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
 
       /* If the exponents aren't the same, adjust the smaller number up to the other. */
       if((retcode = bcd_make_exponents_equal(sig1, &op1->exponent, sig2, &op2->exponent)) != true) break;
@@ -1035,11 +1050,11 @@ bcd_op_add(bcd *op1,
       /* If either num is negative, do a 10's complement before the addition. */
       if(op1->sign == true) { if((retcode = bcd_tens_complement(sig1, sig1)) == false) break; }
       if(op2->sign == true) { if((retcode = bcd_tens_complement(sig2, sig2)) == false) break; }
-      DBG_PRINT("%s() 10'S COMPLEMENT: %s, %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
+      BCD_PRINT(BCD_DBG_OP_ADD, "%s() 10'S COMPLEMENT: %s, %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
 
       uint8_t overflow;
       if((retcode = bcd_significand_add(sig1, sig2, sig1, NULL, &overflow)) != true) { break; }
-      DBG_PRINT("%s():         RESULT: %s: overflow %d\n", __func__, bcd_sig_to_str(sig1), overflow);
+      BCD_PRINT(BCD_DBG_OP_ADD, "%s():         RESULT: %s: overflow %d\n", __func__, bcd_sig_to_str(sig1), overflow);
 
       /* If exactly one of the operands is negative:
        * - If we have overflow, then the result is positive.
@@ -1072,11 +1087,11 @@ bcd_op_add(bcd *op1,
           op1->exponent++;
         }
       }
-      DBG_PRINT("%s()        OVERFLOW: %s %d %d.\n", __func__, bcd_sig_to_str(sig1), op1->exponent, op1->sign);
+      BCD_PRINT(BCD_DBG_OP_ADD, "%s()        OVERFLOW: %s %d %d.\n", __func__, bcd_sig_to_str(sig1), op1->exponent, op1->sign);
 
       /* Clear out any leading zeroes in the significand. */
       if((retcode = bcd_sig_remove_leading_zeroes(sig1, &op1->exponent)) != true) break;
-      DBG_PRINT("%s()    CLEAR ZEROES: %s %d %d.\n", __func__, bcd_sig_to_str(sig1), op1->exponent, op1->sign);
+      BCD_PRINT(BCD_DBG_OP_ADD, "%s()    CLEAR ZEROES: %s %d %d.\n", __func__, bcd_sig_to_str(sig1), op1->exponent, op1->sign);
 
       /* Done.  Set the object to reflect the fact that we calculated the value.
        * This is no longer data that came in through bcd_add_char(). */
@@ -1131,7 +1146,7 @@ bcd_op_sub(bcd *op1,
       /* Start with the raw significands. */
       significand_t *sig1 = &op1->significand;
       significand_t *sig2 = &op2->significand;
-      DBG_PRINT("%s()           BEGIN: %s - %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
+      BCD_PRINT(BCD_DBG_OP_SUB, "%s()           BEGIN: %s - %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
 
       /* If the exponents aren't the same, adjust the smaller number up to the other. */
       if((retcode = bcd_make_exponents_equal(sig1, &op1->exponent, sig2, &op2->exponent)) != true) break;
@@ -1144,11 +1159,11 @@ bcd_op_sub(bcd *op1,
        */
       if((op1->sign == false) && (op2->sign == false)) { if((retcode = bcd_tens_complement(sig2, sig2)) == false) break; }
       if((op1->sign ==  true) && (op2->sign ==  true)) { if((retcode = bcd_tens_complement(sig1, sig1)) == false) break; }
-      DBG_PRINT("%s() 10'S COMPLEMENT: %s, %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
+      BCD_PRINT(BCD_DBG_OP_SUB, "%s() 10'S COMPLEMENT: %s, %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
 
       uint8_t overflow;
       if((retcode = bcd_significand_add(sig1, sig2, sig1, NULL, &overflow)) != true) break;
-      DBG_PRINT("%s():         RESULT: %s CARRY: %d.\n", __func__, bcd_sig_to_str(sig1), overflow);
+      BCD_PRINT(BCD_DBG_OP_SUB, "%s():         RESULT: %s CARRY: %d.\n", __func__, bcd_sig_to_str(sig1), overflow);
 
       /* 10s complement (as required) and set the result sign:
        * POS - POS  = Sign is defined by overflow.
@@ -1162,7 +1177,7 @@ bcd_op_sub(bcd *op1,
         if(op1->sign == true)
         {
           if((retcode = bcd_tens_complement(sig1, &op1->significand)) != true) break;
-          DBG_PRINT("%s():       NEGATIVE: %s.\n", __func__, bcd_sig_to_str(sig1));
+          BCD_PRINT(BCD_DBG_OP_SUB, "%s():       NEGATIVE: %s.\n", __func__, bcd_sig_to_str(sig1));
         }
       }
       else if((op1->sign == true) && (op2->sign == true))
@@ -1171,7 +1186,7 @@ bcd_op_sub(bcd *op1,
         if(op1->sign == true)
         {
           if((retcode = bcd_tens_complement(sig1, &op1->significand)) != true) break;
-          DBG_PRINT("%s():       NEGATIVE: %s.\n", __func__, bcd_sig_to_str(sig1));
+          BCD_PRINT(BCD_DBG_OP_SUB, "%s():       NEGATIVE: %s.\n", __func__, bcd_sig_to_str(sig1));
         }
       }
       else
@@ -1181,7 +1196,7 @@ bcd_op_sub(bcd *op1,
 
       /* Clear out any leading zeroes in the significand. */
       if((retcode = bcd_sig_remove_leading_zeroes(sig1, &op1->exponent)) != true) break;
-      DBG_PRINT("%s():          SHIFT: %s %d %d.\n", __func__, bcd_sig_to_str(sig1), op1->exponent, op1->sign);
+      BCD_PRINT(BCD_DBG_OP_SUB, "%s():          SHIFT: %s %d %d.\n", __func__, bcd_sig_to_str(sig1), op1->exponent, op1->sign);
 
       /* Done.  Set the object to reflect the fact that we calculated the value.
        * This is no longer data that came in through bcd_add_char(). */
@@ -1217,7 +1232,7 @@ bcd_op_mul(bcd *op1,
       /* Start with the raw significands. */
       significand_t *sig1 = &op1->significand;
       significand_t *sig2 = &op2->significand;
-      DBG_PRINT("%s():          BEGIN: %s * %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
+      BCD_PRINT(BCD_DBG_OP_MUL, "%s():          BEGIN: %s * %s\n", __func__, bcd_sig_to_str(sig1), bcd_sig_to_str(sig2));
 
       /* Normalize both numbers before we begin.  We need the exponents. */
       if((retcode = bcd_sig_remove_leading_zeroes(sig1, &op1->exponent)) != true) break;
@@ -1307,7 +1322,7 @@ bcd_op_mul(bcd *op1,
             }
           }
 
-          DBG_PRINT("%s(): RES: %s:%s %s %d\n", __func__, bcd_sig_to_str(&result_hi), bcd_sig_to_str(&result_lo), carry ? "true" : "false", overflow);
+          BCD_PRINT(BCD_DBG_OP_MUL, "%s(): RES: %s:%s %s %d\n", __func__, bcd_sig_to_str(&result_hi), bcd_sig_to_str(&result_lo), carry ? "true" : "false", overflow);
         }
       }
       if(retcode != true) break;
@@ -1369,7 +1384,7 @@ bcd_op_div(bcd *op1,
   {
     do
     {
-      DBG_PRINT("%s() BEGIN: %s / %s\n", __func__, bcd_sig_to_str(&op1->significand), bcd_sig_to_str(&op2->significand));
+      BCD_PRINT(BCD_DBG_OP_DIV, "%s() BEGIN: %s / %s\n", __func__, bcd_sig_to_str(&op1->significand), bcd_sig_to_str(&op2->significand));
 
       /* Check for divide by zero. */
       if(bcd_sig_is_zero(&op2->significand) == true) break;
@@ -1408,7 +1423,7 @@ bcd_op_div(bcd *op1,
         {
           if(bcd_sig_set_digit(&mask_hi, i, 0xF) != true) break;
         }
-        DBG_PRINT("%s() MASK: Divisor %s: Mask %s\n", __func__, bcd_sig_to_str(&divisor_hi), bcd_sig_to_str(&mask_hi));
+        BCD_PRINT(BCD_DBG_OP_DIV, "%s() MASK: Divisor %s: Mask %s\n", __func__, bcd_sig_to_str(&divisor_hi), bcd_sig_to_str(&mask_hi));
       }
 
       /* This identifies the digit position where we're currently calculating
@@ -1429,10 +1444,10 @@ bcd_op_div(bcd *op1,
         while( (bcd_sig_cmp(&divisor_hi, &mask_hi, &dividend_hi, &mask_hi) < 0) ||
               ((bcd_sig_cmp(&divisor_hi, &mask_hi, &dividend_hi, &mask_hi) == 0) && (bcd_sig_cmp(&divisor_lo, &mask_lo, &dividend_lo, &mask_lo) <= 0)) )
         {
-          DBG_PRINT("%s() LOOP_TOP: DIVIDEND: %s:%s\n", __func__, bcd_sig_to_str(&dividend_hi), bcd_sig_to_str(&dividend_lo));
-          DBG_PRINT("%s() LOOP_TOP: DIVISOR:  %s:%s\n", __func__, bcd_sig_to_str(&divisor_hi),  bcd_sig_to_str(&divisor_lo));
-          DBG_PRINT("%s() LOOP_TOP: MASK:     %s:%s\n", __func__, bcd_sig_to_str(&mask_hi),     bcd_sig_to_str(&mask_lo));
-          DBG_PRINT("%s() LOOP_TOP: RESULT:   %s:%s\n", __func__, bcd_sig_to_str(&result_hi),   bcd_sig_to_str(&result_lo));
+          BCD_PRINT(BCD_DBG_OP_DIV, "%s() LOOP_TOP: DIVIDEND: %s:%s\n", __func__, bcd_sig_to_str(&dividend_hi), bcd_sig_to_str(&dividend_lo));
+          BCD_PRINT(BCD_DBG_OP_DIV, "%s() LOOP_TOP: DIVISOR:  %s:%s\n", __func__, bcd_sig_to_str(&divisor_hi),  bcd_sig_to_str(&divisor_lo));
+          BCD_PRINT(BCD_DBG_OP_DIV, "%s() LOOP_TOP: MASK:     %s:%s\n", __func__, bcd_sig_to_str(&mask_hi),     bcd_sig_to_str(&mask_lo));
+          BCD_PRINT(BCD_DBG_OP_DIV, "%s() LOOP_TOP: RESULT:   %s:%s\n", __func__, bcd_sig_to_str(&result_hi),   bcd_sig_to_str(&result_lo));
 
           uint8_t overflow;
           significand_t value_tens;
@@ -1457,10 +1472,10 @@ bcd_op_div(bcd *op1,
           if(bcd_tens_complement(&divisor_hi, &value_tens)                                   == false) break;
           if(bcd_significand_add(&dividend_hi, &value_tens, &dividend_hi, NULL, &overflow)   == false) break;
 
-          DBG_PRINT("%s() LOOP_BOT: DIVIDEND: %s:%s\n", __func__, bcd_sig_to_str(&dividend_hi), bcd_sig_to_str(&dividend_lo));
-          DBG_PRINT("%s() LOOP_BOT: DIVISOR:  %s:%s\n", __func__, bcd_sig_to_str(&divisor_hi),  bcd_sig_to_str(&divisor_lo));
-          DBG_PRINT("%s() LOOP_BOT: MASK:     %s:%s\n", __func__, bcd_sig_to_str(&mask_hi),     bcd_sig_to_str(&mask_lo));
-          DBG_PRINT("%s() LOOP_BOT: RESULT:   %s:%s\n", __func__, bcd_sig_to_str(&result_hi),   bcd_sig_to_str(&result_lo));
+          BCD_PRINT(BCD_DBG_OP_DIV, "%s() LOOP_BOT: DIVIDEND: %s:%s\n", __func__, bcd_sig_to_str(&dividend_hi), bcd_sig_to_str(&dividend_lo));
+          BCD_PRINT(BCD_DBG_OP_DIV, "%s() LOOP_BOT: DIVISOR:  %s:%s\n", __func__, bcd_sig_to_str(&divisor_hi),  bcd_sig_to_str(&divisor_lo));
+          BCD_PRINT(BCD_DBG_OP_DIV, "%s() LOOP_BOT: MASK:     %s:%s\n", __func__, bcd_sig_to_str(&mask_hi),     bcd_sig_to_str(&mask_lo));
+          BCD_PRINT(BCD_DBG_OP_DIV, "%s() LOOP_BOT: RESULT:   %s:%s\n", __func__, bcd_sig_to_str(&result_hi),   bcd_sig_to_str(&result_lo));
         }
 
         uint8_t c;
@@ -1481,7 +1496,7 @@ bcd_op_div(bcd *op1,
         if(bcd_shift_significand(&mask_lo, 1) == false) break;
         if(bcd_sig_set_digit(&mask_lo, 0, c) == false) break;
       }
-      DBG_PRINT("%s() RESULT: %s:%s\n", __func__, bcd_sig_to_str(&result_hi), bcd_sig_to_str(&result_lo));
+      BCD_PRINT(BCD_DBG_OP_DIV, "%s() RESULT: %s:%s\n", __func__, bcd_sig_to_str(&result_hi), bcd_sig_to_str(&result_lo));
 
       /* Copy the result to op1 so we can return it to the caller. */
       if(bcd_sig_copy(&result_hi, &op1->significand) == false) break;
@@ -1704,7 +1719,7 @@ bcd_add_char(bcd *this,
         }
 
         bcd_sig_set_digit(&this->significand, this->char_count++, c);
-        DBG_PRINT("%s(): %s %d\n", __func__, bcd_sig_to_str(&this->significand), this->exponent);
+        BCD_PRINT(BCD_DBG_ADD_CHAR, "%s(): %s %d\n", __func__, bcd_sig_to_str(&this->significand), this->exponent);
       }
 
       retcode = true;
@@ -1739,7 +1754,7 @@ bcd_to_str(bcd  *this,
 
   if( (this != (bcd *) 0) && (buf != (char *) 0) && (buf_size > 0) )
   {
-    DBG_PRINT("%s(): %s, %d, %d, %d.\n", __func__,
+    BCD_PRINT(BCD_DBG_TO_STR, "%s(): %s, %d, %d, %d.\n", __func__,
               bcd_sig_to_str(&this->significand), this->exponent, this->got_decimal_point, this->sign);
 
     /* We need a buffer that's big enough to hold the number, and the number
