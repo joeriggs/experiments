@@ -31,7 +31,7 @@
 #define BCD_DBG_ADD_CHAR             0x1000
 #define BCD_DBG_TO_STR               0x2000
 
-#define BCD_DBG_PRINT_FLAGS BCD_DBG_TO_STR
+#define BCD_DBG_PRINT_FLAGS (BCD_DBG_OP_MUL | BCD_DBG_TO_STR)
 #define BCD_PRINT(FLAG, argc...) { if(FLAG & BCD_DBG_PRINT_FLAGS) { DBG_PRINT(argc); } }
 
 /******************************************************************************
@@ -1282,10 +1282,10 @@ bcd_op_mul(bcd *op1,
            */
           int remain_digit = (b_digit + a_digit) - 1;
           int result_digit = remain_digit - 1;
-          significand_t *remain_sig = (remain_digit < BCD_NUM_DIGITS) ? &result_hi : &result_lo;
-          significand_t *result_sig = (result_digit < BCD_NUM_DIGITS) ? &result_hi : &result_lo;
-          remain_digit %= BCD_NUM_DIGITS;
-          result_digit %= BCD_NUM_DIGITS;
+          significand_t *remain_sig = (remain_digit < BCD_NUM_DIGITS_INTERNAL) ? &result_hi : &result_lo;
+          significand_t *result_sig = (result_digit < BCD_NUM_DIGITS_INTERNAL) ? &result_hi : &result_lo;
+          remain_digit %= BCD_NUM_DIGITS_INTERNAL;
+          result_digit %= BCD_NUM_DIGITS_INTERNAL;
           significand_t remain;
           significand_t result;
           if((retcode = bcd_sig_initialize(&remain))                         != true) break;
@@ -1332,7 +1332,7 @@ bcd_op_mul(bcd *op1,
       while(bcd_sig_is_zero(&result_hi) == false)
       {
         if((retcode = bcd_shift_significand(&op1->significand, 1))  != true) { break; }
-        uint8_t c = bcd_sig_get_digit(&result_hi, (BCD_NUM_DIGITS - 1));
+        uint8_t c = bcd_sig_get_digit(&result_hi, (BCD_NUM_DIGITS_INTERNAL - 1));
         if((retcode = bcd_shift_significand(&result_hi, 1))         != true) { break; }
         if((retcode = bcd_sig_set_digit(&op1->significand, 0, c))   != true) { break; }
       }
@@ -1352,6 +1352,8 @@ bcd_op_mul(bcd *op1,
 
       /* Set the sign. */
       op1->sign = (op1->sign == op2->sign) ? false : true;
+
+      BCD_PRINT(BCD_DBG_OP_MUL, "%s(): OUT: %s %s %d\n", __func__, bcd_sig_to_str(&op1->significand), op1->sign ? "neg" : "pos", op1->exponent);
 
       /* Done.  Set the object to reflect the fact that we calculated the value.
        * This is no longer data that came in through bcd_add_char(). */
@@ -2229,7 +2231,6 @@ bcd_test(void)
     { "BCD_SUB_10", bcd_op_sub,                "0"                 ,           "452389.841"             ,              "-452,389.841"                 }, // 0 - +Val = -Val.
     { "BCD_SUB_11", bcd_op_sub,                "0"                 ,                 ".2841s"           ,                     "0.2841"                }, // 0 - -Val = +Val.
     { "BCD_SUB_11", bcd_op_sub,                "0"                 ,                "0"                 ,                     "0"                     }, // 0 - 0 = 0.
-
 
     { "BCD_MUL_01", bcd_op_mul,                "3"                 ,                "2"                 ,                     "6"                     }, // Debug.
     { "BCD_MUL_02", bcd_op_mul,             "4567"                 ,            "56789"                 ,           "259,355,363"                     }, // Lots of carry.
