@@ -31,7 +31,7 @@
 #define BCD_DBG_ADD_CHAR             0x1000
 #define BCD_DBG_TO_STR               0x2000
 
-#define BCD_DBG_PRINT_FLAGS (BCD_DBG_OP_MUL | BCD_DBG_TO_STR)
+#define BCD_DBG_PRINT_FLAGS (BCD_DBG_OP_ADD | BCD_DBG_TO_STR)
 #define BCD_PRINT(FLAG, argc...) { if(FLAG & BCD_DBG_PRINT_FLAGS) { DBG_PRINT(argc); } }
 
 /******************************************************************************
@@ -565,7 +565,8 @@ bcd_sig_to_str(significand_t *significand)
     /* We allocate the pointer the first time we need it. */
     if(sig_msgs[sig_msgs_index] == (char *) 0)
     {
-      sig_msgs[sig_msgs_index] = (char *) malloc(BCD_NUM_DIGITS_INTERNAL + 1);
+      int alloc_size = ((SIGNIFICAND_SECTIONS_INTERNAL * (SIGNIFICAND_DIGITS_PER_SECTION + 1)) + 1);
+      sig_msgs[sig_msgs_index] = (char *) malloc(alloc_size);
     }
 
     if(sig_msgs[sig_msgs_index] != (char *) 0)
@@ -579,6 +580,7 @@ bcd_sig_to_str(significand_t *significand)
       for(i = 0; i < SIGNIFICAND_SECTIONS_INTERNAL; i++)
       {
         strcat(retval, bcd_sig_section_to_str(significand->s[i]));
+        strcat(retval, ":");
       }
     }
   }
@@ -721,9 +723,9 @@ bcd_to_str_decimal(significand_t *significand,
   return retcode;
 }
 
-/* Perform a straight addition of 2 sections of a significand.  The caller
- * passes an extra large value to store the result so we don't have to worry
- * about overflow.  We simply add the 2 values and place the sum in the large
+/* Perform a straight addition of 2 significand sections.  The caller passes an
+ * extra large value to store the result so we don't have to worry about
+ * overflow.  We simply add the 2 values and place the sum in the large
  * container.  If there was a carry above the size of a regular
  * significand_section_t, the caller will handle it.
  *
@@ -1759,46 +1761,75 @@ bcd_to_str(bcd  *this,
     BCD_PRINT(BCD_DBG_TO_STR, "%s(): %s, %d, %d, %d.\n", __func__,
               bcd_sig_to_str(&this->significand), this->exponent, this->got_decimal_point, this->sign);
 
-    /* We need a buffer that's big enough to hold the number, and the number
-     * has to fit within (sizeof(significand_t)) digits. */
-    int16_t max_exp = (BCD_NUM_DIGITS - 1);
-    int16_t min_exp = (0 - max_exp);
-    int16_t exp = this->exponent;
-    if((exp <= max_exp) && (exp >= min_exp))
-    {
-      /* Regular notation (1,222,333). */
-      retcode = bcd_to_str_decimal(&this->significand,
-                                    this->exponent,
-                                    this->char_count,
-                                    this->got_decimal_point,
-                                    this->sign,
-                                    buf,
-                                    buf_size);
-    }
-    else
-    {
-      /* Need to use scientific notation (1.234e18). */
-      retcode = bcd_to_str_decimal(&this->significand,
-                                    0,
-                                    0,
-                                    false,
-                                    this->sign,
-                                    buf,
-                                    buf_size);
+    bcd *val = (bcd *) 0;
+    bcd *one = (bcd *) 0;
 
-      /* Now add the exponent. */
-      do
+    do
+    {
+      /* Make a copy of this.  We might need to round it up, but we don't want
+       * to change this.  So we'll change the copy. */
+      if((val = bcd_new()) == (bcd *) 0)                                              { break; }
+      if(bcd_copy(this, val) == false)                                                { break; }
+
+      /* If we need to round up, do it here. */
+      if(bcd_sig_get_digit(&val->significand, BCD_NUM_DIGITS) >= 5)
       {
-        /* Set buf_x to the end of the existing string, and then adjust buf_size
+        if((one = bcd_new()) == (bcd *) 0)                                            { break; }
+        {
+          if(bcd_import(one, 1) == false)                                             { break; }
+          if(bcd_shift_significand(&one->significand, (BCD_NUM_DIGITS - 1)) == false) { break; }
+          int i;
+          for(i = BCD_NUM_DIGITS; i < BCD_NUM_DIGITS_INTERNAL; i++)
+          {
+            if(bcd_sig_set_digit(&val->significand, i, 0) == false)                   { break; }
+          }
+          one->sign     = val->sign;
+          one->exponent = val->exponent;
+          if(bcd_op_add(val, one) == false)                                           { break; }
+        }
+        BCD_PRINT(BCD_DBG_TO_STR, "%s(): ROUNDED: %s, %d, %d, %d.\n", __func__,
+                  bcd_sig_to_str(&val->significand), val->exponent, val->got_decimal_point, val->sign);
+      }
+
+      /* Figure out whether to display the value in standard or scientific
+       * notation. */
+      int16_t max_exp = (BCD_NUM_DIGITS - 1);
+      int16_t min_exp = (0 - max_exp);
+      int16_t exp = val->exponent;
+      if((exp <= max_exp) && (exp >= min_exp))
+      {
+        /* Regular notation (1,222,333). */
+        retcode = bcd_to_str_decimal(&val->significand,
+                                      val->exponent,
+                                      val->char_count,
+                                      val->got_decimal_point,
+                                      val->sign,
+                                      buf,
+                                      buf_size);
+      }
+      else
+      {
+        /* Need to use scientific notation (1.234e18). */
+        retcode = bcd_to_str_decimal(&val->significand,
+                                      0,
+                                      0,
+                                      false,
+                                      val->sign,
+                                      buf,
+                                      buf_size);
+
+        /* Now add the exponent.
+         *
+         * Set buf_x to the end of the existing string, and then adjust buf_size
          * to account for the data that was already placed in the buffer. */
         int buf_x = strlen(buf);
         buf_size -= buf_x;
 
         /* Add the 'e' to designate exponent.  Then add the exponent sign. */
         if(--buf_size == 0) { break; } else { buf[buf_x++] = 'e'; }
-        if(--buf_size == 0) { break; } else { buf[buf_x++] = (this->exponent < 0) ? '-' : '+'; }
+        if(--buf_size == 0) { break; } else { buf[buf_x++] = (val->exponent < 0) ? '-' : '+'; }
 
-        int16_t exponent = (this->exponent < 0) ? (0 - this->exponent) : this->exponent;
+        int16_t exponent = (val->exponent < 0) ? (0 - val->exponent) : val->exponent;
         int num;
         for(num = 10000; (num >= 1) && ((exponent / num) == 0); num /= 10);
         for(; num >= 1; num /= 10)
@@ -1809,8 +1840,11 @@ bcd_to_str(bcd  *this,
           exponent -= (digit * num);
         }
         buf[buf_x] = 0;
-      } while(0);
-    }
+      }
+    } while(0);
+
+    bcd_delete(one);
+    bcd_delete(val);
   }
 
   return retcode;
@@ -2217,7 +2251,8 @@ bcd_test(void)
     { "BCD_ADD_21", bcd_op_add,         "99999999"                 ,                "1"                 ,           "100,000,000"                     }, // Carry up to next sect.
     { "BCD_ADD_22", bcd_op_add, "1111111111111111"                 ,                 ".9"               , "1,111,111,111,111,112"                     }, // Carry past the end.
     { "BCD_ADD_23", bcd_op_add, "9999999999999999"                 ,                 ".9"               ,                     "1e+16"                 }, // Carry all the way up.
-    { "BCD_ADD_24", bcd_op_add, "6666666666666666"                 ,                 ".9"               , "6,666,666,666,666,670"                     }, // Carry a little bit.
+    { "BCD_ADD_24", bcd_op_add, "6666666666666666"                 ,                 ".9"               , "6,666,666,666,666,667"                     }, // Carry a little bit.
+    { "BCD_ADD_25", bcd_op_add, "1111111111111111s"                ,                 ".9s"              ,"-1,111,111,111,111,112"                     }, // Negative carry.
 
     { "BCD_SUB_01", bcd_op_sub,                "5"                 ,                "2"                 ,                     "3"                     }, // Debug.
     { "BCD_SUB_02", bcd_op_sub,                "0"                 ,                "1"                 ,                    "-1"                     }, // Neg num.
