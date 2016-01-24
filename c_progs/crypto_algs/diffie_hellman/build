@@ -1,0 +1,5 @@
+#!/bin/sh
+
+gcc diffie_hellman.c -O0 -g -o diffie_hellman -l pthread
+[ "$?" != "0" ] && exit 1
+
