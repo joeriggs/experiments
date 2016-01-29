@@ -1,11 +1,13 @@
 /*******************************************************************************
  *
- * This program calculates an RSA Public and Private key pair.
+ * This module calculates an RSA Public and Private key pair.
  *
  ******************************************************************************/
 
 #include <stdint.h>
 #include <stdio.h>
+
+#include "rsa.h"
 
 /*******************************************************************************
  * Given p, q, and e, calculate d.
@@ -87,7 +89,7 @@ calculate_d(int64_t p, int64_t q, int64_t e)
  * p = 170,497, p = 170,503, e = 11, d = 18,499,032,995
  *
  ******************************************************************************/
-int main(int argc, char **argv)
+int rsa_test(void)
 {
 
 	calculate_d(    5,      11,  7);

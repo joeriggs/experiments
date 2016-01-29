@@ -1,6 +1,6 @@
 /*******************************************************************************
  *
- * This program will negotiate a Diffie Hellman exchange between 2 threads.
+ * This module negotiates a Diffie Hellman exchange between 2 threads.
  *
  ******************************************************************************/
 
@@ -11,7 +11,6 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -19,6 +18,8 @@
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+
+#include "diffie_hellman.h"
 
 /*******************************************************************************
  *
@@ -170,7 +171,7 @@ static void *client_thread(void *arg)
 /*******************************************************************************
  *
  ******************************************************************************/
-int main(int argc, char **argv)
+int diffie_hellman_test(void)
 {
   printf("Testing Diffie Hellman.\n");
 

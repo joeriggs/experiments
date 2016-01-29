@@ -1,6 +1,6 @@
 /*******************************************************************************
  *
- * This program tests a generator and modulus to see how well they will work
+ * This module tests a generator and modulus to see how well they will work
  * together in a Diffie Hellman exchange.  Each ((gen ^ x) % mod) must result
  * in a different value between 0 and (mod - 1).
  *
@@ -11,6 +11,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+
+#include "mod_gen.h"
 
 /*******************************************************************************
  *
@@ -31,7 +33,7 @@ static int64_t do_exponentiation(int64_t base, int64_t exp)
 /*******************************************************************************
  *
  ******************************************************************************/
-int main(int argc, char **argv)
+int mod_gen_test(void)
 {
   int rc = 0;
 
