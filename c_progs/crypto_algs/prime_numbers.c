@@ -55,7 +55,7 @@ int prime_numbers_test(void)
 		printf("%10d ticks: %s %s prime.\n", elapsed_time, big_number_to_str(p), (is_prime) ? "is" : "is not");
 
 		big_number *three = big_number_new("3");
-		big_number_multiply(p, three);
+		big_number_multiply(p, three, p);
 		big_number_decrement(p);
 	}
 

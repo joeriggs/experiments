@@ -7,7 +7,33 @@
 #include <stdint.h>
 #include <stdio.h>
 
+#include "big_number.h"
 #include "rsa.h"
+
+#define PRINTF printf
+
+/*******************************************************************************
+ * Given 2 numbers (assumed to be prime), calcuate phi ((p - 1 * (q - 1)).
+ ******************************************************************************/
+static void
+calculate_phi(big_number *p,
+              big_number *q,
+              big_number *phi)
+{
+	big_number *p_temp = big_number_new("0");
+	big_number_copy(p, p_temp);
+	big_number_decrement(p_temp);
+
+	big_number *q_temp = big_number_new("0");
+	big_number_copy(q, q_temp);
+	big_number_decrement(q_temp);
+
+	big_number_copy(p_temp, phi);
+	big_number_multiply(phi, q_temp, phi);
+
+	big_number_delete(p_temp);
+	big_number_delete(q_temp);
+}
 
 /*******************************************************************************
  * Given p, q, and e, calculate d.
@@ -15,66 +41,96 @@
  * Returns 0 if success.
  * Returns 1 if failure.
  ******************************************************************************/
-static int64_t
-calculate_d(int64_t p, int64_t q, int64_t e)
+static int
+calculate_d(big_number *p,
+            big_number *q,
+            big_number *e,
+            big_number **d)
 {
-	printf("Testing:  p = %jd, q = %jd, e = %jd.\n", p, q, e);
-	/* n = (p * q). */
-	int64_t n = (p * q);
+	PRINTF("Calculate d from p %s, q  %s, e %s.\n",
+	       big_number_to_str(p),
+	       big_number_to_str(q),
+	       big_number_to_str(e));
+
+	/* FYI: n = (p * q). */
 
 	/* Calculate phi (p - 1) * (q - 1). */
-	int64_t phi = (p - 1) * (q - 1);
-	printf("          phi = %jd.\n", phi);
+	big_number *phi = big_number_new("0");
+	calculate_phi(p, q, phi);
+	PRINTF("          phi = %s.\n", big_number_to_str(phi));
 
 	/* Make sure e doesn't share a factor with phi. */
-	if((phi % e) == 0) {
-		printf("e won't work (%jd / %jd = %jd).\n", phi, e, (phi / e));
+	if(big_number_modulus_is_zero(phi, e) == 1) {
+		PRINTF("e won't work (%s mod %s != 0).\n",
+		       big_number_to_str(phi),
+		       big_number_to_str(e));
 		return 1;
 	}
 
 	/* Calculate d using the Extended Euclidian Algorithm. */
-	int64_t d = 0;
+	big_number *tmp =  big_number_new(0);
+	big_number *zero = big_number_new("0");
+	big_number *one  = big_number_new("1");
 	{
-		int64_t val1a = phi;
-		int64_t val1b = e;
+		big_number *val1a = big_number_new("0");
+		big_number_copy(phi, val1a);
 
-		int64_t val2a = phi;
-		int64_t val2b = 1;
+		big_number *val1b = big_number_new("0");
+		big_number_copy(e, val1b);
+
+		big_number *val2a = big_number_new("0");
+		big_number_copy(phi, val2a);
+
+		big_number *val2b = big_number_new("1");
 
 		do {
-			int64_t x = val1a / val1b;
+			big_number *x = big_number_new(0);
+			big_number_divide(val1a, val1b, x);
 
-			int64_t val1c = val1a - (x * val1b);
-			int64_t val2c = val2a - (x * val2b);
+			big_number *val1c = big_number_new(0);
+			big_number_multiply(x, val1b, tmp);
+			big_number_subtract(val1a, tmp, val1c);
 
-			while(val1c < 0) {
-				val1c += phi;
+			big_number *val2c = big_number_new(0);
+			big_number_multiply(x, val2b, tmp);
+			big_number_subtract(val2a, tmp, val2c);
+
+			while(big_number_compare(val1c, zero) < 0) {
+				big_number_add(val1c, phi, val1c);
 			}
-			while(val2c < 0) {
-				val2c += phi;
+			while(big_number_compare(val2c, zero) < 0) {
+				big_number_add(val2c, phi, val2c);
 			}
 
-			val1a = val1b;
-			val1b = val1c;
+			big_number_copy(val1b, val1a);
+			big_number_copy(val1c, val1b);
 
-			val2a = val2b;
-			val2b = val2c;
+			big_number_copy(val2b, val2a);
+			big_number_copy(val2c, val2b);
+		} while(big_number_compare(val1b, one) != 0);
 
-		} while(val1b != 1);
-
-		d = val2b;
-		printf("          d = %jd.\n", d);
+		big_number_copy(val2b, *d);
+		PRINTF("          d = %s.\n", big_number_to_str(*d));
 	}
 
 	/* Test e and d.  (e * d) mod phi = 1. */
-	if(((e * d) % phi) != 1) {
-		printf("e and d don't work (%jd * %jd) / %jd = %jd.\n",
-		        e, d, phi, ((e * d) / phi));
+	big_number_multiply(e, *d, tmp);
+	big_number_modulus(tmp, phi, tmp);
+	if(big_number_compare(tmp, one) != 0) {
+		PRINTF("e and d don't work (%s & %s).\n",
+		        big_number_to_str(e),
+		        big_number_to_str(*d),
+		        big_number_to_str(phi));
 		return 1;
 	}
 
-	printf("Done: p %jd: q %jd: n %jd: phi %jd: e %jd: d %jd.\n",
-	         p, q, n, phi, e, d);
+	PRINTF("Done: p %s: q %s: phi %s: e %s: d %s.\n",
+	         big_number_to_str(p),
+	         big_number_to_str(q),
+	         big_number_to_str(phi),
+	         big_number_to_str(e),
+	         big_number_to_str(*d));
+
 	return 0;
 }
 
@@ -91,12 +147,30 @@ calculate_d(int64_t p, int64_t q, int64_t e)
  ******************************************************************************/
 int rsa_test(void)
 {
+	typedef struct test_data {
+		const char *p;
+		const char *q;
+		const char *e;
+	} test_data;
+	test_data tests[] = {
+		{      "5",     "11",  "7" },
+		{     "61",     "53", "17" },
+		{    "113",     "91", "17" },
+		{ "170497", "170503",  "5" },
+		{ "170497", "170503", "11" }
+	};
+	int test_data_size = (sizeof(tests) / sizeof(test_data));
 
-	calculate_d(    5,      11,  7);
-	calculate_d(   61,      53, 17);
-	calculate_d(   113,     91, 17);
-	calculate_d(170497, 170503,  5);
-	calculate_d(170497, 170503, 11);
+	int i;
+	for(i = 0; i < test_data_size; i++) {
+		big_number *p = big_number_new(tests[i].p);
+		big_number *q = big_number_new(tests[i].q);
+		big_number *e = big_number_new(tests[i].e);
+		big_number *d = big_number_new("0");
+
+		int result = calculate_d(p, q, e, &d);
+		printf("Test %3d %s.\n", i, (result == 0) ? "PASSED" : "FAILED");
+	}
 
 	return 0;
 }

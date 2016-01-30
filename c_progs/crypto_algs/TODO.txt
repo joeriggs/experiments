@@ -1,0 +1,3 @@
+- Fix memory leaks.
+  - Lots of big_number objects are created but not deleted.
+
