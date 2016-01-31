@@ -55,6 +55,7 @@ int mod_gen_test(void)
 	{
 		int64_t mod = tests[i].mod;
 		int64_t gen = tests[i].gen;
+		printf("Testing Mod %jd and gen %jd.\n", mod, gen);
 
 		int list_size = (sizeof(gen) * mod);
 		int64_t *list = (int64_t *) malloc(list_size);
@@ -78,7 +79,7 @@ int mod_gen_test(void)
 				}
 				else if(list[res] != 0)
 				{
-					printf("Multiple exponents got the same result.\n");
+					printf("Multiple exponents got the same result (%jd vs %jd).\n", list[res], i);
 					rc = 3;
 				}
 				else
@@ -102,9 +103,9 @@ int mod_gen_test(void)
 					}
 				}
 
-				printf("%3jd = (%3jd ^ %3d) mod %3jd :: %3d = (%3jd ^ %3d) mod %3jd\n",
-				       list[i], gen, i, mod,
-				       i, gen, x, mod);
+				printf("%3d = (%3jd ^ %3jd) mod %3jd :: %3d = (%3jd ^ %3jd) mod %3jd\n",
+				       i, gen, list[i], mod,
+				       x, gen, list[x], mod);
 			}
 		}
 	}
