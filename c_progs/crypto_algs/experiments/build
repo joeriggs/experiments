@@ -1,6 +1,6 @@
 #!/bin/sh
 
-SRCS="big_number.c diffie_hellman.c main.c prime_numbers.c rsa.c"
+SRCS="main.c mod_gen.c"
 
 gcc ${SRCS} -O0 -g -o test -l pthread
 [ "$?" != "0" ] && exit 1
