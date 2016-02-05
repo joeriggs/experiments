@@ -24,25 +24,30 @@ typedef uint64_t num_t;
 static void prime_factors(num_t num)
 {
 	num_t n = num;
-	num_t factor = 2;
+	num_t factor = 1;
+	num_t count = 0;
+	char buf[2048] = { 0 }, *b = buf;
+	size_t b_size = sizeof(buf);
 
-	printf("Testing %jd:", num);
+	snprintf(b, b_size, "%20jd:", num); b_size -= strlen(b); b += strlen(b);
+	clock_t start_time = clock();
 	while(factor < n) {
-		num_t mod = n % factor;
-		if(mod == 0) {
-			printf(" %jd", factor);
+		num_t mod;
+
+		factor++;
+		count = 0;
+
+		while((mod = (n % factor)) == 0) {
+			count++;
 			n /= factor;
 		}
-		else {
-			factor++;
+		if(count > 0) {
+			snprintf(b, b_size, " (%jd ^ %jd)", factor, count); b_size -= strlen(b); b += strlen(b);
 		}
 	}
-	if(num != n) {
-		printf(" %jd.\n", factor);
-	}
-	else {
-		printf(" PRIME.\n");
-	}
+	clock_t elapsed_time = clock() - start_time;
+
+	printf("%10d: %s %s\n", elapsed_time, buf, (factor == num) ? " PRIME" : "");
 }
 
 /*******************************************************************************
@@ -50,23 +55,29 @@ static void prime_factors(num_t num)
  ******************************************************************************/
 int prime_factors_test(void)
 {
-	printf("Testing prime factos brute force.\n");
+	printf("Testing prime factors brute force.\n");
 
 	int rc = 0;
 
+#ifdef FIXED_DATA_TEST
 	typedef struct test_data {
 		num_t num;
 	} test_data;
 	test_data tests[] = {
-		{                3ULL },
-		{                8ULL },
-		{               30ULL },
-		{               99ULL },
-		{         20394401ULL }, // PRIME
-                { 2251799813685248ULL }, // (2 ^ 51)
-                { 2251799813685247ULL }, // (2 ^ 51) - 1
-                { 9007199254740992ULL }, // (2 ^ 53)
-                { 9007199254740991ULL }, // (2 ^ 53) - 1
+		{                   3ULL },
+		{                   8ULL },
+		{                  30ULL },
+		{                  60ULL },
+		{                 900ULL },
+		{                  99ULL },
+		{            20394401ULL }, // PRIME
+                {    2251799813685248ULL }, // (2 ^ 51)
+                {    2251799813685247ULL }, // (2 ^ 51) - 1
+                {    9007199254740992ULL }, // (2 ^ 53)
+                {    9007199254740991ULL }, // (2 ^ 53) - 1
+                {   90071992547409912ULL }, // Big
+                {  900719925474099123ULL }, // Bigger
+                { 9007199254740991234ULL }, // Biggest
 	};
 	int num_tests = sizeof(tests) / sizeof(test_data);
 
@@ -76,6 +87,21 @@ int prime_factors_test(void)
 		num_t num = tests[i].num;
 		prime_factors(num);
 	}
+#else
+	num_t i = 1;
+	num_t j = 0;
+	while(1) {
+		/* Calculate the prime factors (brute force). */
+		prime_factors(i);
+
+		/* Alternate adjusting i as follows:
+		 * 1. i = (i * 2).
+		 * 2. i = ((i * 2) - 1).
+		 */
+		i = (i * 2) - j;
+		j ^= 1;
+	}
+#endif
 
 	return rc;
 }
