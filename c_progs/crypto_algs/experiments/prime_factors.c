@@ -14,6 +14,11 @@
 
 #include "prime_factors.h"
 
+/* Styles of testing. */
+#undef FIXED_DATA_TEST
+#undef TIMES_TWO_TEST
+#define DISPLAY_ONLY_PRIMES
+
 typedef uint64_t num_t;
 
 /*******************************************************************************
@@ -47,7 +52,13 @@ static void prime_factors(num_t num)
 	}
 	clock_t elapsed_time = clock() - start_time;
 
+#ifdef DISPLAY_ONLY_PRIMES
+	if(factor == num) {
+		printf("%10d: %jd\n", elapsed_time, num);
+	}
+#else
 	printf("%10d: %s %s\n", elapsed_time, buf, (factor == num) ? " PRIME" : "");
+#endif
 }
 
 /*******************************************************************************
@@ -87,7 +98,7 @@ int prime_factors_test(void)
 		num_t num = tests[i].num;
 		prime_factors(num);
 	}
-#else
+#elif defined(TIMES_TWO_TEST)
 	num_t i = 1;
 	num_t j = 0;
 	while(1) {
@@ -100,6 +111,12 @@ int prime_factors_test(void)
 		 */
 		i = (i * 2) - j;
 		j ^= 1;
+	}
+#else
+	num_t i = 1;
+	while(1) {
+		/* Calculate the prime factors (brute force). */
+		prime_factors(i++);
 	}
 #endif
 

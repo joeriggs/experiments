@@ -117,7 +117,7 @@ calculate_d(big_number *p,
 	big_number_multiply(e, *d, tmp);
 	big_number_modulus(tmp, phi, tmp);
 	if(big_number_compare(tmp, one) != 0) {
-		PRINTF("e and d don't work (%s & %s).\n",
+		PRINTF("e and d don't work (%s & %s) %s.\n",
 		        big_number_to_str(e),
 		        big_number_to_str(*d),
 		        big_number_to_str(phi));

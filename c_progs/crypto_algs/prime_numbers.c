@@ -35,7 +35,7 @@ prime_test(big_number *p, clock_t *elapsed_time)
 		big_number_increment(i);
 	}
 	clock_t end_time = clock();
-	*elapsed_time = clock() - start_time;
+	*elapsed_time = end_time - start_time;
 	return rc;
 }
 
@@ -51,8 +51,9 @@ int prime_numbers_test(void)
 
 	while(big_number_compare(p, p_end) < 0) {
 		clock_t elapsed_time;
+		prime_test(p, &elapsed_time);
 		int is_prime = prime_test(p, &elapsed_time);
-		printf("%10d ticks: %s %s prime.\n", elapsed_time, big_number_to_str(p), (is_prime) ? "is" : "is not");
+		printf("%10d ticks: %s %s prime.\n", (int) elapsed_time, big_number_to_str(p), (is_prime) ? "is" : "is not");
 
 		big_number *three = big_number_new("3");
 		big_number_multiply(p, three, p);

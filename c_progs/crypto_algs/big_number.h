@@ -24,9 +24,6 @@ int big_number_compare(big_number *a, big_number *b);
 
 int big_number_is_zero(big_number *this);
 
-void big_number_modulus(big_number *this, big_number *modulus, big_number *result);
-
-int big_number_modulus_is_zero(big_number *this, big_number *modulus);
 
 void big_number_add(big_number *addend1, big_number *addend2, big_number *sum);
 
@@ -36,11 +33,17 @@ void big_number_multiply(big_number *factor1, big_number *factor2, big_number *p
 
 void big_number_divide(big_number *dividend, big_number *divisor, big_number *quotient);
 
-void big_number_exponent(big_number *base, big_number *exp, big_number *res);
 
 void big_number_increment(big_number *this);
 
 void big_number_decrement(big_number *this);
+
+
+void big_number_modulus(big_number *this, big_number *modulus, big_number *result);
+
+int big_number_modulus_is_zero(big_number *this, big_number *modulus);
+
+void big_number_exponent(big_number *base, big_number *exp, big_number *res);
 
 
 /*******************************************************************************

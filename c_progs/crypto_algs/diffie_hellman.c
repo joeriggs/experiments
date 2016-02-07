@@ -11,6 +11,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include <arpa/inet.h>
 #include <net/if.h>
@@ -92,7 +93,7 @@ static void *server_thread(void *arg)
 
     /* Receive val from client, and perform step 2. */
     int64_t val2;
-    read(clnt_sock, &val2, sizeof(val2)) != sizeof(val2);
+    read(clnt_sock, &val2, sizeof(val2));
     int64_t secret = do_exponentiation(val2, pri) % modulus;
     printf("SERVER: %jd.\n", secret);
 
@@ -155,7 +156,7 @@ static void *client_thread(void *arg)
 
     /* Receive val from client, and perform step 2. */
     int64_t val2;
-    read(sock, &val2, sizeof(val2)) != sizeof(val2);
+    read(sock, &val2, sizeof(val2));
     int64_t secret = do_exponentiation(val2, pri) % modulus;
     printf("CLIENT: %jd.\n", secret);
 
@@ -195,10 +196,10 @@ int diffie_hellman_test(void)
 
   void *thread_rc;
   rc = pthread_join(server, &thread_rc);
-  printf("server thread exited. rc %d.  thread rc %d.\n", rc, thread_rc);
+  printf("server thread exited. rc %d.  thread rc %p.\n", rc, thread_rc);
 
   rc = pthread_join(client, &thread_rc);
-  printf("client thread exited. rc %d.  thread rc %d.\n", rc, thread_rc);
+  printf("client thread exited. rc %d.  thread rc %p.\n", rc, thread_rc);
 
   return rc;
 }
