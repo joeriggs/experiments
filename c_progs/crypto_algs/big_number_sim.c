@@ -16,12 +16,96 @@
  ******************************* CLASS DEFINITION ******************************
  ******************************************************************************/
 
+#define MAX_BIG_NUMBER (0xFFFFFFFFFFFFFFFFULL)
+
 /* This is the big_number class. */
 struct big_number {
 	int64_t num;
 
 	char str[128];
 };
+
+/********************************* PRIVATE API ********************************/
+
+#if 0
+/*******************************************************************************
+ * Singleton: Return a pointer to a big_number object that contains 0.
+ ******************************************************************************/
+static big_number *
+_big_number_0(void)
+{
+	static big_number *this = (big_number *) 0;
+	if(this == (big_number *) 0) {
+		this = big_number_new(0);
+	}
+	return this;
+}
+
+/*******************************************************************************
+ * Singleton: Return a pointer to a big_number object that contains 1.
+ ******************************************************************************/
+static big_number *
+_big_number_1(void)
+{
+	static big_number *this = (big_number *) 0;
+	if(this == (big_number *) 0) {
+		if((this = big_number_new(0)) != (big_number *) 0) {
+			big_number_increment(this);
+		}
+	}
+	return this;
+}
+#endif
+
+/*******************************************************************************
+ * Singleton: Return a pointer to a big_number object that contains 2.
+ ******************************************************************************/
+static big_number *
+_big_number_2(void)
+{
+	static big_number *this = (big_number *) 0;
+	if(this == (big_number *) 0) {
+		if((this = big_number_new(0)) != (big_number *) 0) {
+			big_number_increment(this);
+			big_number_increment(this);
+		}
+	}
+	return this;
+}
+
+/*******************************************************************************
+ * Singleton: Return a pointer to a big_number object that contains 10.
+ ******************************************************************************/
+static big_number *
+_big_number_10(void)
+{
+	static big_number *this = (big_number *) 0;
+	if(this == (big_number *) 0) {
+		if((this = big_number_new(0)) != (big_number *) 0) {
+			big_number_add(_big_number_2(), _big_number_2(), this);
+			big_number_add(this, this, this);
+			big_number_add(this, _big_number_2(), this);
+		}
+	}
+	return this;
+}
+
+/*******************************************************************************
+ * Singleton: Return a pointer to a big_number object that contains 1.
+ ******************************************************************************/
+static big_number *
+_big_number_1000(void)
+{
+	static big_number *this = (big_number *) 0;
+	if(this == (big_number *) 0) {
+		if((this = big_number_new(0)) != (big_number *) 0) {
+			big_number_copy(_big_number_10(), this);
+			big_number_multiply(this, _big_number_10(), this);
+			big_number_multiply(this, _big_number_10(), this);
+		}
+	}
+	return this;
+}
 
 /********************************** PUBLIC API ********************************/
 
@@ -63,7 +147,21 @@ void big_number_copy(big_number *src,
 
 const char *big_number_to_str(big_number *this)
 {
-	snprintf(this->str, sizeof(this->str), "%jd", this->num);
+	/* Chop the number down by the thousands. */
+	const char *str = (char *) 0;
+	big_number *tmp = (big_number *) 0;
+	if(big_number_compare(this, _big_number_1000()) >= 0) {
+		tmp = big_number_new(0);
+		big_number_divide(this, _big_number_1000(), tmp);
+		str = big_number_to_str(tmp);
+		big_number_modulus(this, _big_number_1000(), tmp);
+		snprintf(this->str, sizeof(this->str), "%s,%03jd", str, tmp->num);
+		big_number_delete(tmp);
+	}
+	else {
+		snprintf(this->str, sizeof(this->str), "%jd", this->num);
+	}
+
 	return this->str;
 }
 
