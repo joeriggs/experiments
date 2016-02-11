@@ -32,11 +32,14 @@ prime_test(big_number *p, clock_t *elapsed_time)
 
 	/* Test up to ((p / 2) + 1). */
 	big_number *limit = big_number_new(0);
-	big_number *i = big_number_new("2");
-	big_number_divide(p, i, limit);
+	big_number_divide(p, big_number_2(), limit);
 	big_number_increment(limit);
 
-	big_number *result = big_number_new("0");
+	/* Start with modulus 2. Increment each time through the loop. */
+	big_number *i = big_number_new(0);
+	big_number_copy(big_number_2(), i);
+
+	big_number *result = big_number_new(0);
 	clock_t start_time = clock();
 	while(big_number_compare(i, limit) < 0) {
 		big_number_modulus(p, i, result);
@@ -48,6 +51,10 @@ prime_test(big_number *p, clock_t *elapsed_time)
 	}
 	clock_t end_time = clock();
 	*elapsed_time = end_time - start_time;
+
+	big_number_delete(result);
+	big_number_delete(i);
+	big_number_delete(limit);
 	return rc;
 }
 
@@ -58,8 +65,14 @@ prime_test(big_number *p, clock_t *elapsed_time)
  ******************************************************************************/
 int prime_numbers_test(void)
 {
-	big_number *p     = big_number_new("1");
-	big_number *p_end = big_number_new("1000000000"); // 1,000,000,000
+	big_number *p     = big_number_new(0); // 1
+	big_number_copy(big_number_1(), p);
+
+	big_number *p_end = big_number_new(0); // 1,000,000,000
+	big_number_copy(big_number_1(), p_end);
+	big_number_multiply(p_end, big_number_1000(), p_end);
+	big_number_multiply(p_end, big_number_1000(), p_end);
+	big_number_multiply(p_end, big_number_1000(), p_end);
 
 	while(big_number_compare(p, p_end) < 0) {
 		clock_t elapsed_time;
@@ -77,12 +90,14 @@ int prime_numbers_test(void)
 #ifdef TEST_ALL_INTEGERS
 		big_number_increment(p);
 #else
-		big_number *three = big_number_new("3");
+		const big_number *three = big_number_3();
 		big_number_multiply(p, three, p);
 		big_number_decrement(p);
 #endif
 	}
 
+	big_number_delete(p);
+	big_number_delete(p_end);
 	return 0;
 }
 
