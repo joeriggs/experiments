@@ -13,10 +13,15 @@
 #include "prime_numbers.h"
 
 /* Styles of testing. */
-#define TEST_ALL_INTEGERS
-
+#ifdef TEST_REGRESSION
+#undef DISPLAY_ONLY_PRIMES
+#undef TEST_ALL_INTEGERS
+#else /* TEST_REGRESSION */
 #define DISPLAY_ONLY_PRIMES
+#define TEST_ALL_INTEGERS
+#endif /* TEST_REGRESSION */
 
+#ifdef TEST
 /*******************************************************************************
  * Given p, try to determine if it's prime by trying all possible factors.  This
  * is essentially a brute force test.  We'll test up to (p / 2) to see if we can
@@ -26,20 +31,20 @@
  * Returns 0 if p is NOT prime.
  ******************************************************************************/
 static int
-prime_test(big_number *p, clock_t *elapsed_time)
+prime_numbers_is_prime(big_number *p, clock_t *elapsed_time)
 {
 	int rc = 1;
 
 	/* Test up to ((p / 2) + 1). */
-	big_number *limit = big_number_new(0);
+	big_number *limit = big_number_new();
 	big_number_divide(p, big_number_2(), limit);
 	big_number_increment(limit);
 
 	/* Start with modulus 2. Increment each time through the loop. */
-	big_number *i = big_number_new(0);
+	big_number *i = big_number_new();
 	big_number_copy(big_number_2(), i);
 
-	big_number *result = big_number_new(0);
+	big_number *result = big_number_new();
 	clock_t start_time = clock();
 	while(big_number_compare(i, limit) < 0) {
 		big_number_modulus(p, i, result);
@@ -57,7 +62,9 @@ prime_test(big_number *p, clock_t *elapsed_time)
 	big_number_delete(limit);
 	return rc;
 }
+#endif /* TEST */
 
+#ifdef TEST
 /*******************************************************************************
  *
  * Spin in a loop and look for prime numbers.  Print the ones that are prime.
@@ -65,19 +72,26 @@ prime_test(big_number *p, clock_t *elapsed_time)
  ******************************************************************************/
 int prime_numbers_test(void)
 {
-	big_number *p     = big_number_new(0); // 1
+	int rc = 0;
+	clock_t elapsed_time;
+	big_number *p = big_number_new();
+
+#if defined(TEST_REGRESSION)
+	prime_numbers_is_prime(p, &elapsed_time);
+
+#elif defined(TEST_ALL_INTEGERS)
+	/* Start with 1. */
 	big_number_copy(big_number_1(), p);
 
-	big_number *p_end = big_number_new(0); // 1,000,000,000
+	/* Test up to 1,000,000,000. */
+	big_number *p_end = big_number_new();
 	big_number_copy(big_number_1(), p_end);
 	big_number_multiply(p_end, big_number_1000(), p_end);
 	big_number_multiply(p_end, big_number_1000(), p_end);
 	big_number_multiply(p_end, big_number_1000(), p_end);
 
 	while(big_number_compare(p, p_end) < 0) {
-		clock_t elapsed_time;
-		prime_test(p, &elapsed_time);
-		int is_prime = prime_test(p, &elapsed_time);
+		int is_prime = prime_numbers_is_prime(p, &elapsed_time);
 
 #ifdef DISPLAY_ONLY_PRIMES
 		if(is_prime) {
@@ -86,18 +100,14 @@ int prime_numbers_test(void)
 #else
 		printf("%10d ticks: %s %s prime.\n", (int) elapsed_time, big_number_to_str(p), (is_prime) ? "is" : "is not");
 #endif
-
-#ifdef TEST_ALL_INTEGERS
 		big_number_increment(p);
-#else
-		const big_number *three = big_number_3();
-		big_number_multiply(p, three, p);
-		big_number_decrement(p);
-#endif
 	}
 
-	big_number_delete(p);
 	big_number_delete(p_end);
-	return 0;
+#endif /* TEST_ALL_INTEGERS */
+
+	big_number_delete(p);
+	return rc;
 }
+#endif /* TEST */
 
