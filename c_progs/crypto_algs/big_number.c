@@ -527,7 +527,18 @@ int big_number_is_zero(const big_number *this)
  ******************************************************************************/
 int big_number_test(void)
 {
-	return 0;
+	int rc = 1;
+
+	printf("%s(): Starting.\n", __func__);
+	big_number *this = big_number_new();
+	if(this != (big_number *) 0) {
+		rc = big_number_from_str(this, "123");
+		printf("big_number_from_str() returned %d.\n", rc);
+
+		big_number_delete(this);
+	}
+	printf("%s(): Returning %d.\n", __func__, rc);
+	return rc;
 }
 
 /*******************************************************************************

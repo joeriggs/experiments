@@ -2,6 +2,7 @@
 #include <stdio.h>
 
 #include "big_number.h"
+#include "big_number_base.h"
 #include "diffie_hellman.h"
 #include "prime_numbers.h"
 #include "rsa.h"
@@ -11,8 +12,13 @@ static int test(void)
 {
 	int rc = 0;
 
-	printf("Starting Big Number test.\n");
-	rc = big_number_test();
+	printf("Starting Big Number Base test.\n");
+	rc = big_number_base_test();
+
+	if(rc == 0) {
+		printf("Starting Big Number test.\n");
+		rc = big_number_test();
+	}
 
 	if(rc == 0) {
 		printf("Starting Diffie Hellman test.\n");
