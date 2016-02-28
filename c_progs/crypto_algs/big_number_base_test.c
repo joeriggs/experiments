@@ -121,3 +121,24 @@ int big_number_base_compare(const big_number_base *a, const big_number_base *b)
 	return rc;
 }
 
+#ifdef TEST
+/********** Test Methods */
+
+/*******************************************************************************
+ * Run the big_number_base tests.
+ *
+ * Output:
+ *   Success - 0.
+ *   Failure - 1.
+ ******************************************************************************/
+int big_number_base_test(void)
+{
+	int rc = 0;
+
+	printf("%s(): Starting.\n", __func__);
+
+	printf("%s(): Returning %d.\n", __func__, rc);
+	return rc;
+}
+#endif /* TEST */
+
