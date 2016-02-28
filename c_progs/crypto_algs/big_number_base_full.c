@@ -119,17 +119,23 @@ void big_number_base_copy(const big_number_base *src, big_number_base *dst)
 void big_number_base_add(const big_number_base *addend1, const big_number_base *addend2, big_number_base *sum)
 {
 	if((addend1 != (big_number_base *) 0) && (addend2 != (big_number_base *) 0) && (sum != (big_number_base *) 0)) {
+		/* Make copies of the addends.  So if (sum == addend[12]), then
+		 * we won't overwrite the addend as we're working. */
+		big_number_base a1, a2;
+		big_number_base_copy(addend1, &a1);
+		big_number_base_copy(addend2, &a2);
+
 		/* Clear the result before we start. */
 		big_number_base_copy(big_number_base_0(), sum);
 
 		int i;
-		for(i = 0; i < sizeof(addend1->num); i++) {
+		for(i = 0; i < sizeof(a1.num); i++) {
 			/* Calculate the value and check for carry. */
-			uint8_t value = (uint8_t) ((sum->num[i] + addend1->num[i] + addend2->num[i]) & 0xFF);
-			uint8_t carry = (uint8_t) ((sum->num[i] + addend1->num[i] + addend2->num[i]) >> 8);
+			uint8_t value = (uint8_t) ((sum->num[i] + a1.num[i] + a2.num[i]) & 0xFF);
+			uint8_t carry = (uint8_t) ((sum->num[i] + a1.num[i] + a2.num[i]) >> 8);
 
 			sum->num[i] = value;
-			if((carry > 0) && ((i + i) < sizeof(addend1->num))) {
+			if((carry > 0) && ((i + i) < sizeof(a1.num))) {
 				sum->num[i + 1] += 1;
 			}
 		}
@@ -159,7 +165,6 @@ void big_number_base_subtract(const big_number_base *minuend, const big_number_b
 		for(i = 0; i < sizeof(min.num); i++) {
 			uint16_t val1 = min.num[i];
 			uint16_t val2 = subtrahend->num[i];
-			printf("val1 %d (%02X): val2 %d (%02X).\n", val1, val1, val2, val2);
 
 			/* Check to see if we need to borrow. */
 			if(val2 > val1) {
@@ -200,6 +205,35 @@ void big_number_base_subtract(const big_number_base *minuend, const big_number_b
 void big_number_base_multiply(const big_number_base *factor1, const big_number_base *factor2, big_number_base *product)
 {
 	if((factor1 != (big_number_base *) 0) && (factor2 != (big_number_base *) 0) && (product != (big_number_base *) 0)) {
+		int x;
+		for(x = 0; x < sizeof(factor1->num); x++) {
+			/* Results for one pass go into here. */
+			big_number_base prod;
+			big_number_base_copy(big_number_base_0(), &prod);
+
+			/* Overflows for one pass go into here. */
+			big_number_base ovfl;
+			big_number_base_copy(big_number_base_0(), &ovfl);
+
+			int y;
+			for(y = 0; y < sizeof(factor1->num); y++) {
+				if((factor1->num[x] > 0) && (factor2->num[y] > 0)) {
+					uint16_t res = factor1->num[x] * factor2->num[y];
+
+					if((x + y) < sizeof(prod.num)) {
+						prod.num[x + y] = (uint8_t) ((res >> 0) & 0xFF);
+
+						if((x + y + 1) < sizeof(ovfl.num)) {
+							ovfl.num[x + y + 1] = (uint8_t) ((res >> 8) & 0xFF);
+						}
+					}
+				}
+			}
+
+			/* Add to the running total. */
+			big_number_base_add(product, &prod, product);
+			big_number_base_add(product, &ovfl, product);
+		}
 	}
 }
 
@@ -286,7 +320,7 @@ big_number_base_print(big_number_base *this)
 {
 	int i;
 	for(i = (sizeof(this->num) - 1); i >= 0; i--) {
-		printf("%02x:", this->num[i]);
+		printf("%02X:", this->num[i]);
 	}
 	printf("\n");
 }
@@ -317,18 +351,26 @@ int big_number_base_test(void)
 		.num[1] = 0x22
 	};
 	big_number_base num3;
+
+	/* Addition test. */
 	big_number_base_copy(big_number_base_0(), &num3);
-	big_number_base_add(&num1, &num2, &num3); // 01:1B:0D
-	big_number_base_print(&num3);
+	big_number_base_add(&num1, &num2, &num3);
+	big_number_base_print(&num3); // 01:1B:0D
 
-	printf("Subtracting\n  ");
-	big_number_base_print(&num3);
-	printf("- ");
-	big_number_base_print(&num2);
-
+	/* Subtraction test. */
 	big_number_base_copy(big_number_base_0(), &num1);
-	big_number_base_subtract(&num3, &num2, &num1); // 00:F8:F8
-	big_number_base_print(&num1);
+	big_number_base_subtract(&num3, &num2, &num1);
+	big_number_base_print(&num1); // 00:F8:F8
+
+	/* Multiplication test. */
+	big_number_base_copy(big_number_base_0(), &num3);
+	big_number_base_multiply(&num1, &num2, &num3);
+	big_number_base_print(&num3); // 21:25:5C:58
+
+	/* Division test. */
+	big_number_base_copy(big_number_base_0(), &num1);
+	big_number_base_divide(&num3, &num2, &num1);
+	big_number_base_print(&num1); // 00:F8:F8
 
 	printf("%s(): Returning %d.\n", __func__, rc);
 	return rc;
