@@ -8,6 +8,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "big_number_base.h"
 
@@ -20,9 +21,7 @@ struct big_number_base {
 	uint8_t num[8];
 };
 
-/********************************* PRIVATE API ********************************/
-
-/********************************** CONSTANTS *********************************/
+/****************************** PRIVATE CONSTANTS *****************************/
 
 /*******************************************************************************
  * Singleton: Return a pointer to a big_number_base object that contains 1.
@@ -58,6 +57,82 @@ const big_number_base *big_number_base_1(void)
 		}
 	}
 	return this;
+}
+
+/********************************* PRIVATE API ********************************/
+
+/*******************************************************************************
+ * Divide 2 big_number_base objects.  Return quotient and/or remainder.
+ *
+ * Input:
+ *   dividend  - Value 1.
+ *   divisor   - Value 2.
+ *   quotient  - (optional) pointer to the dest result.
+ *   remainder - (optional) pointer to the dest remainder (a.k.a. modulus).
+ *
+ * Output:
+ *   quotient and remainder contain the result.
+ ******************************************************************************/
+static void
+big_number_base_div_mod(const big_number_base *dividend,
+                        const big_number_base *divisor,
+                        big_number_base *quotient,
+                        big_number_base *remainder)
+{
+	if((dividend != (big_number_base *) 0) && (divisor != (big_number_base *) 0)) {
+		//printf("dividend     = %s\n", big_number_base_to_str(dividend));
+		//printf("divisor      = %s\n", big_number_base_to_str(divisor));
+
+		big_number_base rem;
+		big_number_base_copy(dividend, &rem);
+
+		big_number_base d2;
+		big_number_base_copy(divisor, &d2);
+
+		big_number_base q;
+		big_number_base_copy(big_number_base_0(), &q);
+
+		int shift_count = 0;
+		while(d2.num[sizeof(d2.num) - 1] == 0) {
+			int x;
+			for(x = (sizeof(d2.num) - 1); x > 0; x--) {
+				d2.num[x] = d2.num[x - 1];
+			}
+			d2.num[0] = 0;
+			shift_count++;
+		}
+
+		int digit;
+		for(digit = 0; (digit < sizeof(d2.num)) && (d2.num[digit] == 0); digit++);
+
+		//printf("divisor_mod  = %s.  Shifted %d times.  digit = %d\n", big_number_base_to_str(&d2), shift_count, digit);
+
+		while(shift_count >= 0) {
+			while(big_number_base_compare(&rem, &d2) >= 0) {
+				big_number_base_subtract(&rem, &d2, &rem);
+				q.num[digit]++;
+			}
+
+			/* Shift the number one byte to the right. */
+			int x;
+			for(x = 1; x < sizeof(d2.num); x++) {
+				d2.num[x - 1] = d2.num[x];
+			}
+			d2.num[sizeof(d2.num) - 1] = 0;
+
+			digit--;
+			shift_count--;
+		}
+
+		//printf("quotient = %s.  Remainder = %s.\n", big_number_base_to_str(&q), big_number_base_to_str(&rem));
+
+		if(quotient != (big_number_base *) 0) {
+			big_number_base_copy(&q, quotient);
+		}
+		if(remainder != (big_number_base *) 0) {
+			big_number_base_copy(&rem, remainder);
+		}
+	}
 }
 
 /********************************** PUBLIC API ********************************/
@@ -205,35 +280,42 @@ void big_number_base_subtract(const big_number_base *minuend, const big_number_b
 void big_number_base_multiply(const big_number_base *factor1, const big_number_base *factor2, big_number_base *product)
 {
 	if((factor1 != (big_number_base *) 0) && (factor2 != (big_number_base *) 0) && (product != (big_number_base *) 0)) {
+		/* Use a temp product, in case product == factor1 or factor2. */
+		big_number_base tmp_product;
+		big_number_base_copy(big_number_base_0(), &tmp_product);
+
 		int x;
 		for(x = 0; x < sizeof(factor1->num); x++) {
 			/* Results for one pass go into here. */
-			big_number_base prod;
-			big_number_base_copy(big_number_base_0(), &prod);
+			big_number_base loop_prod;
+			big_number_base_copy(big_number_base_0(), &loop_prod);
 
 			/* Overflows for one pass go into here. */
-			big_number_base ovfl;
-			big_number_base_copy(big_number_base_0(), &ovfl);
+			big_number_base loop_ovfl;
+			big_number_base_copy(big_number_base_0(), &loop_ovfl);
 
 			int y;
 			for(y = 0; y < sizeof(factor1->num); y++) {
 				if((factor1->num[x] > 0) && (factor2->num[y] > 0)) {
 					uint16_t res = factor1->num[x] * factor2->num[y];
 
-					if((x + y) < sizeof(prod.num)) {
-						prod.num[x + y] = (uint8_t) ((res >> 0) & 0xFF);
+					if((x + y) < sizeof(loop_prod.num)) {
+						loop_prod.num[x + y] = (uint8_t) ((res >> 0) & 0xFF);
 
-						if((x + y + 1) < sizeof(ovfl.num)) {
-							ovfl.num[x + y + 1] = (uint8_t) ((res >> 8) & 0xFF);
+						if((x + y + 1) < sizeof(loop_ovfl.num)) {
+							loop_ovfl.num[x + y + 1] = (uint8_t) ((res >> 8) & 0xFF);
 						}
 					}
 				}
 			}
 
 			/* Add to the running total. */
-			big_number_base_add(product, &prod, product);
-			big_number_base_add(product, &ovfl, product);
+			big_number_base_add(&tmp_product, &loop_prod, &tmp_product);
+			big_number_base_add(&tmp_product, &loop_ovfl, &tmp_product);
 		}
+
+		/* Copy our internal product to the caller's product. */
+		big_number_base_copy(&tmp_product, product);
 	}
 }
 
@@ -241,14 +323,15 @@ void big_number_base_multiply(const big_number_base *factor1, const big_number_b
  * Divide 2 big_number_base objects.
  *
  * Input:
- *   dividend - Value 1.
- *   divisor  - Value 2.
- *   quotient - A pointer to the object that will receive the result.
+ *   dividend  - Value 1.
+ *   divisor   - Value 2.
+ *   quotient  - A pointer to the object that will receive the result.
  ******************************************************************************/
-void big_number_base_divide(const big_number_base *dividend, const big_number_base *divisor, big_number_base *quotient)
+void big_number_base_divide(const big_number_base *dividend,
+                            const big_number_base *divisor,
+                            big_number_base *quotient)
 {
-	if((dividend != (big_number_base *) 0) && (divisor != (big_number_base *) 0) && (quotient != (big_number_base *) 0)) {
-	}
+	big_number_base_div_mod(dividend, divisor, quotient, 0);
 }
 
 /*******************************************************************************
@@ -262,8 +345,7 @@ void big_number_base_divide(const big_number_base *dividend, const big_number_ba
  ******************************************************************************/
 void big_number_base_modulus(const big_number_base *this, const big_number_base *modulus, big_number_base *result)
 {
-	if((this != (big_number_base *) 0) && (modulus != (big_number_base *) 0) && (result != (big_number_base *) 0)) {
-	}
+	big_number_base_div_mod(this, modulus, 0, result);
 }
 
 /********** Comparison Methods */
@@ -286,45 +368,31 @@ int big_number_base_compare(const big_number_base *a, const big_number_base *b)
 	int rc = 2;
 
 	if((a != (big_number_base *) 0) && (b != (big_number_base *) 0)) {
-//		if(a->num < b->num)
-		{
-			rc = -1;
-		}
-//		else if(a->num == b->num)
-		{
-			rc = 0;
-		}
-//		else
-		{
-			rc = 1;
-		}
+
+		//printf("Compare %s and %s\n", big_number_base_to_str(a), big_number_base_to_str(b));
+
+		int index = sizeof(a->num);
+		rc = 0;
+
+		for(index = (sizeof(a->num) - 1); (index >= 0) && (rc == 0); index--) {
+
+			if(a->num[index] < b->num[index]) {
+				rc = -1;
+			}
+
+			else if(a->num[index] > b->num[index]) {
+				rc = 1;
+			}
+
+		} while((index > 0) && (rc == 0));
 	}
 
 	return rc;
 }
 
+/********** Test/Debug Methods */
+
 #ifdef TEST
-/********** Test Methods */
-
-/*******************************************************************************
- * Print the contents of a big_number_base object.
- *
- * Input:
- *   this - The big_number_base object to print.
- *
- * Output:
- *   N/A.
- ******************************************************************************/
-static void
-big_number_base_print(big_number_base *this)
-{
-	int i;
-	for(i = (sizeof(this->num) - 1); i >= 0; i--) {
-		printf("%02X:", this->num[i]);
-	}
-	printf("\n");
-}
-
 /*******************************************************************************
  * Run the big_number_base tests.
  *
@@ -355,25 +423,64 @@ int big_number_base_test(void)
 	/* Addition test. */
 	big_number_base_copy(big_number_base_0(), &num3);
 	big_number_base_add(&num1, &num2, &num3);
-	big_number_base_print(&num3); // 01:1B:0D
+	printf("%s\n", big_number_base_to_str(&num3)); // 01:1B:0D
 
 	/* Subtraction test. */
 	big_number_base_copy(big_number_base_0(), &num1);
 	big_number_base_subtract(&num3, &num2, &num1);
-	big_number_base_print(&num1); // 00:F8:F8
+	printf("%s\n", big_number_base_to_str(&num1)); // 00:F8:F8
 
 	/* Multiplication test. */
 	big_number_base_copy(big_number_base_0(), &num3);
 	big_number_base_multiply(&num1, &num2, &num3);
-	big_number_base_print(&num3); // 21:25:5C:58
+	printf("%s\n", big_number_base_to_str(&num3)); // 21:25:5C:58
 
 	/* Division test. */
 	big_number_base_copy(big_number_base_0(), &num1);
 	big_number_base_divide(&num3, &num2, &num1);
-	big_number_base_print(&num1); // 00:F8:F8
+	printf("%s\n", big_number_base_to_str(&num1)); // 00:F8:F8
 
 	printf("%s(): Returning %d.\n", __func__, rc);
+	rc = 0;
+
 	return rc;
 }
 #endif /* TEST */
+
+/*******************************************************************************
+ * Returns a string that contains the contents of a big_number_base object.
+ *
+ * NOTE: This function can only handle a few strings at a time.  So don't load
+ *       too many into a printf().
+ *
+ * Input:
+ *   this - The big_number_base object to convert to a string.
+ *
+ * Output:
+ *   A string that contains the number.
+ ******************************************************************************/
+const char *
+big_number_base_to_str(const big_number_base *this)
+{
+	static char strings[5][1024];
+	static int  strings_index = 0;
+
+	char *str = strings[strings_index];
+	char *str_tmp = str;
+
+	if(++strings_index == 5) {
+		strings_index = 0;
+	}
+
+	int i;
+	for(i = (sizeof(this->num) - 1); i >= 0; i--) {
+		sprintf(str_tmp, "%02X", this->num[i]);
+		if(i > 0) {
+			strcat(str_tmp, ":");
+		}
+		str_tmp += strlen(str_tmp);
+	}
+
+	return str;
+}
 

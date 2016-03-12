@@ -48,22 +48,22 @@ calculate_d(big_number *p,
             big_number *d)
 {
 	PRINTF("Calculate d from p %s, q  %s, e %s.\n",
-	       big_number_to_str(p),
-	       big_number_to_str(q),
-	       big_number_to_str(e));
+	       big_number_to_dec_str(p),
+	       big_number_to_dec_str(q),
+	       big_number_to_dec_str(e));
 
 	/* FYI: n = (p * q). */
 
 	/* Calculate phi (p - 1) * (q - 1). */
 	big_number *phi = big_number_new();
 	calculate_phi(p, q, phi);
-	PRINTF("          phi = %s.\n", big_number_to_str(phi));
+	PRINTF("          phi = %s.\n", big_number_to_dec_str(phi));
 
 	/* Make sure e doesn't share a factor with phi. */
 	if(big_number_modulus_is_zero(phi, e) == 1) {
 		PRINTF("e won't work (%s mod %s != 0).\n",
-		       big_number_to_str(phi),
-		       big_number_to_str(e));
+		       big_number_to_dec_str(phi),
+		       big_number_to_dec_str(e));
 		return 1;
 	}
 
@@ -110,7 +110,7 @@ calculate_d(big_number *p,
 		} while(big_number_compare(val1b, big_number_1()) != 0);
 
 		big_number_copy(val2b, d);
-		PRINTF("          d = %s.\n", big_number_to_str(d));
+		PRINTF("          d = %s.\n", big_number_to_dec_str(d));
 	}
 
 	/* Test e and d.  (e * d) mod phi = 1. */
@@ -118,18 +118,18 @@ calculate_d(big_number *p,
 	big_number_modulus(tmp, phi, tmp);
 	if(big_number_compare(tmp, big_number_1()) != 0) {
 		PRINTF("e and d don't work (%s & %s) %s.\n",
-		        big_number_to_str(e),
-		        big_number_to_str(d),
-		        big_number_to_str(phi));
+		        big_number_to_dec_str(e),
+		        big_number_to_dec_str(d),
+		        big_number_to_dec_str(phi));
 		return 1;
 	}
 
 	PRINTF("Done: p %s: q %s: phi %s: e %s: d %s.\n",
-	         big_number_to_str(p),
-	         big_number_to_str(q),
-	         big_number_to_str(phi),
-	         big_number_to_str(e),
-	         big_number_to_str(d));
+	         big_number_to_dec_str(p),
+	         big_number_to_dec_str(q),
+	         big_number_to_dec_str(phi),
+	         big_number_to_dec_str(e),
+	         big_number_to_dec_str(d));
 
 	return 0;
 }

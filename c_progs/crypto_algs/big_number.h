@@ -22,6 +22,8 @@ const big_number *big_number_10(void);
 
 const big_number *big_number_100(void);
 
+const big_number *big_number_256(void);
+
 const big_number *big_number_1000(void);
 
 /********************************** PUBLIC API ********************************/
@@ -68,5 +70,7 @@ int big_number_test(void);
 
 int big_number_from_str(big_number *this, const char *str);
 
-const char *big_number_to_str(big_number *this);
+const char *big_number_to_dec_str(big_number *this);
+
+const char *big_number_to_hex_str(big_number *this);
 

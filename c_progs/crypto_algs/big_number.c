@@ -39,7 +39,7 @@ struct big_number {
 
 /*******************************************************************************
  * This is a worker function.  It converts (this % 1,000) to an ASCII string.
- * It is only called from big_number_to_str().
+ * It is only called from big_number_to_dec_str().
  *
  * Input:
  *   this - A pointer to the big_number object that contains the number.
@@ -48,7 +48,7 @@ struct big_number {
  * Output:
  *   Returns a pointer to this->str.
  ******************************************************************************/
-static const char *big_number_to_str_worker(big_number *this, int zero_fill)
+static const char *big_number_to_dec_str_worker(big_number *this, int zero_fill)
 {
 	big_number *tmp1 = big_number_new();
 	big_number *tmp2 = big_number_new();
@@ -102,7 +102,10 @@ static const char *big_number_to_str_worker(big_number *this, int zero_fill)
 	return this->str;
 }
 
-/********************************** CONSTANTS *********************************/
+/********************************** CONSTANTS **********************************
+ * As these functions initialize themselves, they can call constants functions
+ * for numbers smaller than themselves.
+ ******************************************************************************/
 
 /*******************************************************************************
  * Singleton: Return a pointer to a big_number object that contains 0.
@@ -189,6 +192,26 @@ big_number_10(void)
 }
 
 /*******************************************************************************
+ * Singleton: Return a pointer to a big_number object that contains 16.
+ *
+ * Output:
+ *   Success - Returns a pointer to the big_number object.
+ *   Failure - Returns 0.
+ ******************************************************************************/
+const big_number *
+big_number_16(void)
+{
+	static big_number *this = (big_number *) 0;
+	if(this == (big_number *) 0) {
+		if((this = big_number_new()) != (big_number *) 0) {
+			big_number_multiply(big_number_2(), big_number_2(), this); //  4
+			big_number_exponent(this, big_number_2(), this);           // 16
+		}
+	}
+	return this;
+}
+
+/*******************************************************************************
  * Singleton: Return a pointer to a big_number object that contains 100.
  *
  * Output:
@@ -203,6 +226,25 @@ big_number_100(void)
 		if((this = big_number_new()) != (big_number *) 0) {
 			big_number_copy(big_number_10(), this);
 			big_number_multiply(this, big_number_10(), this);
+		}
+	}
+	return this;
+}
+
+/*******************************************************************************
+ * Singleton: Return a pointer to a big_number object that contains 256.
+ *
+ * Output:
+ *   Success - Returns a pointer to the big_number object.
+ *   Failure - Returns 0.
+ ******************************************************************************/
+const big_number *
+big_number_256(void)
+{
+	static big_number *this = (big_number *) 0;
+	if(this == (big_number *) 0) {
+		if((this = big_number_new()) != (big_number *) 0) {
+			big_number_multiply(big_number_16(), big_number_16(), this);
 		}
 	}
 	return this;
@@ -535,6 +577,8 @@ int big_number_test(void)
 		rc = big_number_from_str(this, "123");
 		printf("big_number_from_str() returned %d.\n", rc);
 
+		printf("big_number_to_str() returned %s.\n", big_number_to_dec_str(this));
+
 		big_number_delete(this);
 	}
 	printf("%s(): Returning %d.\n", __func__, rc);
@@ -584,7 +628,7 @@ int big_number_from_str(big_number *this, const char *str)
 }
 
 /*******************************************************************************
- * Produce an ASCII string from a big_number object.
+ * Produce an ASCII decimal string from a big_number object.
  *
  * Input:
  *   this - The big_number object to convert.
@@ -593,7 +637,7 @@ int big_number_from_str(big_number *this, const char *str)
  *   Returns a pointer to the ASCII string.
  *   Returns 0 if an error occurs.
  ******************************************************************************/
-const char *big_number_to_str(big_number *this)
+const char *big_number_to_dec_str(big_number *this)
 {
 	const char *rc = (const char *) 0;
 	if(this != (big_number *) 0) {
@@ -601,17 +645,37 @@ const char *big_number_to_str(big_number *this)
 		if(big_number_compare(this, big_number_1000()) >= 0) {
 			big_number *tmp = big_number_new();
 			big_number_divide(this, big_number_1000(), tmp);
-			snprintf(this->str, sizeof(this->str), "%s,", big_number_to_str(tmp));
+			snprintf(this->str, sizeof(this->str), "%s,", big_number_to_dec_str(tmp));
 
 			big_number_modulus(this, big_number_1000(), tmp);
-			strncat(this->str, big_number_to_str_worker(tmp, 1), (sizeof(this->str) - strlen(this->str)));
+			strncat(this->str, big_number_to_dec_str_worker(tmp, 1), (sizeof(this->str) - strlen(this->str)));
 			big_number_delete(tmp);
 		}
 		else {
-			strncpy(this->str, big_number_to_str_worker(this, 0), sizeof(this->str));
+			strncpy(this->str, big_number_to_dec_str_worker(this, 0), sizeof(this->str));
 		}
 
 		rc = this->str;
+	}
+
+	return rc;
+}
+/*******************************************************************************
+ * Produce an ASCII hex string from a big_number object.
+ *
+ * Input:
+ *   this - The big_number object to convert.
+ *
+ * Output:
+ *   Returns a pointer to the ASCII string.
+ *   Returns 0 if an error occurs.
+ ******************************************************************************/
+const char *big_number_to_hex_str(big_number *this)
+{
+	const char *rc = (const char *) 0;
+	if(this != (big_number *) 0) {
+		/* Let the base class do the conversion. */
+		rc = big_number_base_to_str(this->num);
 	}
 
 	return rc;
