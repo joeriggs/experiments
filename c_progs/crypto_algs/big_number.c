@@ -441,7 +441,7 @@ void big_number_modulus(const big_number *this, const big_number *modulus, big_n
 }
 
 /*******************************************************************************
- * Perform an exponentiation operation.  The opeation is done as follows:
+ * Perform an exponentiation operation.  The operation is done as follows:
  * result = base ^^ exp.
  *
  * Input:
@@ -460,26 +460,24 @@ void big_number_exponent(const big_number *base, const big_number *exp, big_numb
 
 		/* 1. Make local copies of the base and exponent.
 		 * 2. Start with res = 0.
-		 * 3. Create *tmp (A big_number object for misc tasks).
 		 */
+		big_number *b1   = big_number_new();
+		big_number_copy(base, b1);
 		big_number *b   = big_number_new();
 		big_number_copy(base, b);
 		big_number *e   = big_number_new();
 		big_number_copy(exp,  e);
 		big_number_reset(result);
-		big_number *tmp = big_number_new();
 
 		while(big_number_is_zero(e) == 0) {
-			big_number_modulus(e, big_number_2(), tmp);
-			if(big_number_is_zero(tmp) == 0) {
+			if(big_number_modulus_is_zero(e, big_number_2()) == 0) {
 				big_number_add(result, b, result);
 			}
 
-			big_number_multiply(b, big_number_2(), b);
+			big_number_multiply(b, b1, b);
 			big_number_divide(e, big_number_2(), e);
 		}
 
-		big_number_delete(tmp);
 		big_number_delete(e);
 		big_number_delete(b);
 	}
@@ -500,14 +498,17 @@ void big_number_exponent(const big_number *base, const big_number *exp, big_numb
  *   Return 1 if the modulus result is zero.
  *   Return 0 if the modulus result is non-zero.
  ******************************************************************************/
-int big_number_modulus_is_zero(big_number *this, big_number *modulus)
+int big_number_modulus_is_zero(const big_number *this, const big_number *modulus)
 {
 	int rc = -1;
 	if((this != (big_number *) 0) && (modulus != (big_number *) 0)) {
 		big_number *tmp = big_number_new();
-		big_number_modulus(this, modulus, tmp);
-		rc = big_number_is_zero(tmp);
-		big_number_delete(tmp);
+		if(tmp != 0) {
+			big_number_modulus(this, modulus, tmp);
+			rc = big_number_is_zero(tmp);
+
+			big_number_delete(tmp);
+		}
 	}
 
 	return rc;
@@ -558,32 +559,7 @@ int big_number_is_zero(const big_number *this)
 	return rc;
 }
 
-/********** Test Methods */
-
-/*******************************************************************************
- * Run the big_number tests.
- *
- * Output:
- *   Success - 0.
- *   Failure - 1.
- ******************************************************************************/
-int big_number_test(void)
-{
-	int rc = 1;
-
-	printf("%s(): Starting.\n", __func__);
-	big_number *this = big_number_new();
-	if(this != (big_number *) 0) {
-		rc = big_number_from_str(this, "123");
-		printf("big_number_from_str() returned %d.\n", rc);
-
-		printf("big_number_to_str() returned %s.\n", big_number_to_dec_str(this));
-
-		big_number_delete(this);
-	}
-	printf("%s(): Returning %d.\n", __func__, rc);
-	return rc;
-}
+/********** Diagnostic Methods */
 
 /*******************************************************************************
  * This function is used by test code.  It allows a test function to convert a
@@ -660,24 +636,147 @@ const char *big_number_to_dec_str(big_number *this)
 
 	return rc;
 }
+
 /*******************************************************************************
  * Produce an ASCII hex string from a big_number object.
  *
  * Input:
  *   this - The big_number object to convert.
+ *   zero_fill - 1 == Prepend zeroes if leading byte(s) = 0.
  *
  * Output:
  *   Returns a pointer to the ASCII string.
  *   Returns 0 if an error occurs.
  ******************************************************************************/
-const char *big_number_to_hex_str(big_number *this)
+const char *big_number_to_hex_str(big_number *this, int zero_fill)
 {
 	const char *rc = (const char *) 0;
 	if(this != (big_number *) 0) {
 		/* Let the base class do the conversion. */
-		rc = big_number_base_to_str(this->num);
+		rc = big_number_base_to_hex_str(this->num, zero_fill);
 	}
 
 	return rc;
 }
+
+/********** Test Methods */
+
+#ifdef TEST
+/*******************************************************************************
+ * Run the big_number tests.
+ *
+ * Output:
+ *   Success - 0.
+ *   Failure - 1.
+ ******************************************************************************/
+int big_number_test(void)
+{
+	int rc = 1;
+
+	printf("%s(): Starting\n", __func__);
+
+	/* Test data. */
+	big_number *test_obj1 = 0;
+	big_number *test_obj2 = 0;
+
+	do {
+		/* Test _new(). */
+		test_obj1 = big_number_new();
+		if(test_obj1 == (big_number *) 0) { break; }
+		test_obj2 = big_number_new();
+		if(test_obj2 == (big_number *) 0) { break; }
+
+		/* Test _from_str(). */
+		if(big_number_from_str(test_obj1, "123") != 0) { break; }
+
+		/* Test _to_dec_str(). */
+		if(strcmp(big_number_to_dec_str(test_obj1), "123") != 0) { break; }
+
+		/* test _to_hex_str(). */
+		if(strcmp(big_number_to_hex_str(test_obj1, 0), "7B") != 0) { break; }
+
+		/* Test the constants.  These tests basically test each other
+		 * by using each other to verify their values.  This set of
+		 * tests also tests the following methods:
+		 * - _copy()
+		 * - _is_zero()
+		 * - _add()
+		 * - _multiply()
+		 * - _exponent()
+		 * - _compare()
+		 */
+		big_number_copy(big_number_0(), test_obj1);
+		if(big_number_is_zero(test_obj1) != 1) { break; }
+
+		big_number_copy(big_number_1(), test_obj1);
+		if(big_number_is_zero(test_obj1) != 0) { break; }
+
+		big_number_add(test_obj1, big_number_1(), test_obj1);
+		if(big_number_compare(test_obj1, big_number_2()) != 0) { break; }
+
+		big_number_add(test_obj1, test_obj1, test_obj1);    // 4
+		big_number_add(test_obj1, test_obj1, test_obj1);    // 8
+		big_number_add(test_obj1, big_number_2(), test_obj1); // 10
+		if(big_number_compare(test_obj1, big_number_10()) != 0) { break; }
+
+		big_number_multiply(test_obj1, big_number_10(), test_obj1); // 100
+		if(big_number_compare(test_obj1, big_number_100()) != 0) { break; }
+
+		big_number_exponent(big_number_2(), big_number_2(), test_obj1); //   4
+		big_number_multiply(test_obj1, test_obj1, test_obj1);           //  16
+		big_number_multiply(test_obj1, test_obj1, test_obj1);           // 256
+		if(big_number_compare(test_obj1, big_number_256()) != 0) { break; }
+
+		big_number_multiply(big_number_10(), big_number_10(), test_obj1); //   100 
+		big_number_multiply(test_obj1, big_number_10(), test_obj1);       // 1,000 
+		if(big_number_compare(test_obj1, big_number_1000()) != 0) { break; }
+
+		/* Test _reset(). */
+		if(big_number_is_zero(test_obj1) != 0) { break; }
+		big_number_reset(test_obj1);
+		if(big_number_is_zero(test_obj1) != 1) { break; }
+
+		/* Test _increment(). */
+		int i;
+		for(i = 0; i < 10; i++) {
+			big_number_increment(test_obj1);
+		}
+		if(big_number_compare(test_obj1, big_number_10()) != 0) { break; }
+
+		/* Test _decrement(). */
+		for(i = 0; i < 5; i++) {
+			big_number_decrement(test_obj1);
+		}
+		big_number_add(test_obj1, test_obj1, test_obj1);
+		if(big_number_compare(test_obj1, big_number_10()) != 0) { break; }
+
+		/* Test _modulus_is_zero(). */
+		if(big_number_modulus_is_zero(big_number_256(), big_number_10()) != 0) { break; }
+		if(big_number_modulus_is_zero(big_number_256(), big_number_2()) != 1) { break; }
+
+		/* Test _subtract(), _divide(), and _modulus(). */
+		big_number_subtract(big_number_1000(), big_number_256(), test_obj1);
+		if(strcmp(big_number_to_dec_str(test_obj1), "744") != 0) { break; }
+		big_number_subtract(test_obj1, big_number_2(), test_obj1);
+		if(strcmp(big_number_to_dec_str(test_obj1), "742") != 0) { break; }
+		big_number_modulus(test_obj1, big_number_10(), test_obj2);
+		if(strcmp(big_number_to_dec_str(test_obj2), "2") != 0) { break; }
+		big_number_divide(test_obj1, big_number_10(), test_obj1); // 74
+		if(strcmp(big_number_to_dec_str(test_obj1), "74") != 0) { break; }
+		big_number_modulus(test_obj1, big_number_2(), test_obj2);
+		if(big_number_is_zero(test_obj2) != 1) { break; }
+
+		/* Complete.  Pass. */
+		rc = 0;
+
+	} while(0);
+
+	/* Test _delete(). */
+	big_number_delete(test_obj2);
+	big_number_delete(test_obj1);
+
+	printf("%s(): %s.\n", __func__, (rc == 0) ? "PASS" : "FAIL");
+	return rc;
+}
+#endif /* TEST */
 

@@ -45,9 +45,11 @@ void big_number_base_modulus(const big_number_base *this, const big_number_base 
 
 int big_number_base_compare(const big_number_base *a, const big_number_base *b);
 
-/********** Test/Debug Methods */
+/********** Diagnostic Methods */
+
+const char *big_number_base_to_hex_str(const big_number_base *this, int zero_fill);
+
+/********** Test Methods */
 
 int big_number_base_test(void);
-
-const char *big_number_base_to_str(const big_number_base *this);
 

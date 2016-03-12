@@ -21,7 +21,10 @@ struct big_number_base {
 	uint8_t num[8];
 };
 
-/****************************** PRIVATE CONSTANTS *****************************/
+/********************************** CONSTANTS **********************************
+ * Some of these are private and some are public.  They're all very simple,
+ * so making them public is a small risk.
+ ******************************************************************************/
 
 /*******************************************************************************
  * Singleton: Return a pointer to a big_number_base object that contains 1.
@@ -327,9 +330,7 @@ void big_number_base_multiply(const big_number_base *factor1, const big_number_b
  *   divisor   - Value 2.
  *   quotient  - A pointer to the object that will receive the result.
  ******************************************************************************/
-void big_number_base_divide(const big_number_base *dividend,
-                            const big_number_base *divisor,
-                            big_number_base *quotient)
+void big_number_base_divide(const big_number_base *dividend, const big_number_base *divisor, big_number_base *quotient)
 {
 	big_number_base_div_mod(dividend, divisor, quotient, 0);
 }
@@ -367,9 +368,10 @@ int big_number_base_compare(const big_number_base *a, const big_number_base *b)
 {
 	int rc = 2;
 
+	//printf("%s(): Compare %p vs %p.\n", __func__, a, b);
 	if((a != (big_number_base *) 0) && (b != (big_number_base *) 0)) {
 
-		//printf("Compare %s and %s\n", big_number_base_to_str(a), big_number_base_to_str(b));
+		//printf("%s(): Compare %s and %s\n", __func__, big_number_base_to_str(a), big_number_base_to_str(b));
 
 		int index = sizeof(a->num);
 		rc = 0;
@@ -390,62 +392,7 @@ int big_number_base_compare(const big_number_base *a, const big_number_base *b)
 	return rc;
 }
 
-/********** Test/Debug Methods */
-
-#ifdef TEST
-/*******************************************************************************
- * Run the big_number_base tests.
- *
- * Output:
- *   Success - 0.
- *   Failure - 1.
- ******************************************************************************/
-int big_number_base_test(void)
-{
-	int rc = 1;
-
-	printf("%s(): Starting.\n", __func__);
-	big_number_base *obj = big_number_base_new();
-	if(obj != (big_number_base *) 0) {
-		big_number_base_delete(obj);
-	}
-
-	big_number_base num1 = {
-		.num[0] = 0xF8,
-		.num[1] = 0xF8
-	};
-	big_number_base num2 = {
-		.num[0] = 0x15,
-		.num[1] = 0x22
-	};
-	big_number_base num3;
-
-	/* Addition test. */
-	big_number_base_copy(big_number_base_0(), &num3);
-	big_number_base_add(&num1, &num2, &num3);
-	printf("%s\n", big_number_base_to_str(&num3)); // 01:1B:0D
-
-	/* Subtraction test. */
-	big_number_base_copy(big_number_base_0(), &num1);
-	big_number_base_subtract(&num3, &num2, &num1);
-	printf("%s\n", big_number_base_to_str(&num1)); // 00:F8:F8
-
-	/* Multiplication test. */
-	big_number_base_copy(big_number_base_0(), &num3);
-	big_number_base_multiply(&num1, &num2, &num3);
-	printf("%s\n", big_number_base_to_str(&num3)); // 21:25:5C:58
-
-	/* Division test. */
-	big_number_base_copy(big_number_base_0(), &num1);
-	big_number_base_divide(&num3, &num2, &num1);
-	printf("%s\n", big_number_base_to_str(&num1)); // 00:F8:F8
-
-	printf("%s(): Returning %d.\n", __func__, rc);
-	rc = 0;
-
-	return rc;
-}
-#endif /* TEST */
+/********** Diagnostic Methods */
 
 /*******************************************************************************
  * Returns a string that contains the contents of a big_number_base object.
@@ -455,12 +402,13 @@ int big_number_base_test(void)
  *
  * Input:
  *   this - The big_number_base object to convert to a string.
+ *   zero_fill - 1 == Prepend zeroes if leading byte(s) = 0.
  *
  * Output:
  *   A string that contains the number.
  ******************************************************************************/
 const char *
-big_number_base_to_str(const big_number_base *this)
+big_number_base_to_hex_str(const big_number_base *this, int zero_fill)
 {
 	static char strings[5][1024];
 	static int  strings_index = 0;
@@ -474,13 +422,117 @@ big_number_base_to_str(const big_number_base *this)
 
 	int i;
 	for(i = (sizeof(this->num) - 1); i >= 0; i--) {
-		sprintf(str_tmp, "%02X", this->num[i]);
-		if(i > 0) {
-			strcat(str_tmp, ":");
+		/* The caller can ask to skip leading zeroes. */
+		if((this->num[i] != 0) || (zero_fill == 1)) {
+			sprintf(str_tmp, "%02X", this->num[i]);
+			if(i > 0) {
+				strcat(str_tmp, ":");
+			}
+			str_tmp += strlen(str_tmp);
 		}
-		str_tmp += strlen(str_tmp);
 	}
 
 	return str;
 }
+
+/********** Test Methods */
+
+#ifdef TEST
+/*******************************************************************************
+ * Run the big_number_base tests.
+ *
+ * Output:
+ *   Success - 0.
+ *   Failure - 1.
+ ******************************************************************************/
+int big_number_base_test(void)
+{
+	int rc = 1;
+
+	printf("%s(): Starting:\n", __func__);
+
+	do {
+		/* Test new() and delete(). */
+		big_number_base *obj = big_number_base_new();
+		if(obj == (big_number_base *) 0) { break; }
+		big_number_base_delete(obj);
+
+		/* Starting values for some of the tests. */
+		big_number_base num1 = { // 63,736
+			.num[0] = 0xF8,
+			.num[1] = 0xF8
+		};
+		big_number_base num2 = { //  8,725
+			.num[0] = 0x15,
+			.num[1] = 0x22
+		};
+		big_number_base num3;
+
+		/* Addition test. */
+		{
+			/* Expected result (72,461). */
+			big_number_base add_test_res = { .num[0] = 0x0D, .num[1] = 0x1B, .num[2] = 0x01 };
+
+			/* Clear the result and run the test. */
+			big_number_base_copy(big_number_base_0(), &num3);
+			big_number_base_add(&num1, &num2, &num3);
+			if(big_number_base_compare(&num3, &add_test_res) != 0) { break; }
+		}
+
+		/* Subtraction test. */
+		{
+			/* Expected result (63,736). */
+			big_number_base sub_test_res = { .num[0] = 0xF8, .num[1] = 0xF8 };
+
+			/* Clear the result and run the test. */
+			big_number_base_copy(big_number_base_0(), &num1);
+			big_number_base_subtract(&num3, &num2, &num1);
+			if(big_number_base_compare(&num1, &sub_test_res) != 0) { break; }
+		}
+
+		/* Multiplication test. */
+		{
+			/* Expected result (556,096,600). */
+			big_number_base mul_test_res = { .num[0] = 0x58, .num[1] = 0x5C, .num[2] = 0x25, .num[3] = 0x21 };
+	
+			/* Clear the result and run the test. */
+			big_number_base_copy(big_number_base_0(), &num3);
+			big_number_base_multiply(&num1, &num2, &num3);
+			if(big_number_base_compare(&num3, &mul_test_res) != 0) { break; }
+		}
+
+		/* Division test. */
+		{
+			/* Expected result (63,736). */
+			big_number_base div_test_res = { .num[0] = 0xF8, .num[1] = 0xF8 };
+
+			/* Clear the result and run the test. */
+			big_number_base_copy(big_number_base_0(), &num1);
+			big_number_base_divide(&num3, &num2, &num1);
+			if(big_number_base_compare(&num1, &div_test_res) != 0) { break; }
+		}
+
+		/* Modulus test. */
+		{
+			/* 137 % 19 = 4. */
+			big_number_base mod_test_val1 = { .num[0] = 0x89 }; // 137
+			big_number_base mod_test_val2 = { .num[0] = 0x13 }; //  19
+			big_number_base mod_test_res  = { .num[0] = 0x04 }; //   4
+
+			/* Clear the result and run the test. */
+			big_number_base mod_result;
+			big_number_base_copy(big_number_base_0(), &mod_result);
+			big_number_base_modulus(&mod_test_val1, &mod_test_val2, &mod_result);
+			if(big_number_base_compare(&mod_result, &mod_test_res) != 0) { break; }
+		}
+
+		/* Complete.  Pass. */
+		rc = 0;
+
+	} while(0);
+
+	printf("%s(): %s.\n", __func__, (rc == 0) ? "PASS" : "FAIL");
+	return rc;
+}
+#endif /* TEST */
 

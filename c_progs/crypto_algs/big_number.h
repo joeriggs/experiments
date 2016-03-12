@@ -58,19 +58,21 @@ void big_number_exponent(const big_number *base, const big_number *exp, big_numb
 
 /********** Comparison Methods */
 
-int big_number_modulus_is_zero(big_number *this, big_number *modulus);
+int big_number_modulus_is_zero(const big_number *this, const big_number *modulus);
 
 int big_number_compare(const big_number *a, const big_number *b);
 
 int big_number_is_zero(const big_number *this);
 
-/********** Test Methods */
-
-int big_number_test(void);
+/********** Diagnostic Methods */
 
 int big_number_from_str(big_number *this, const char *str);
 
 const char *big_number_to_dec_str(big_number *this);
 
-const char *big_number_to_hex_str(big_number *this);
+const char *big_number_to_hex_str(big_number *this, int zero_fill);
+
+/********** Test Methods */
+
+int big_number_test(void);
 
