@@ -72,41 +72,56 @@ prime_numbers_is_prime(big_number *p, clock_t *elapsed_time)
  ******************************************************************************/
 int prime_numbers_test(void)
 {
-	int rc = 0;
+	printf("%s(): Starting\n", __func__);
+	int rc = 1;
 	clock_t elapsed_time;
-	big_number *p = big_number_new();
+
+	do {
+		big_number *p = big_number_new();
+		if(p == 0) { break; }
 
 #if defined(TEST_REGRESSION)
-	prime_numbers_is_prime(p, &elapsed_time);
+		big_number_copy(big_number_10(), p);
+		if(prime_numbers_is_prime(p, &elapsed_time) != 0) { break; }
+
+		big_number_add(p, big_number_1(), p);
+		if(prime_numbers_is_prime(p, &elapsed_time) != 1) { break; }
 
 #elif defined(TEST_ALL_INTEGERS)
-	/* Start with 1. */
-	big_number_copy(big_number_1(), p);
+		/* Start with 1. */
+		big_number_copy(big_number_1(), p);
 
-	/* Test up to 1,000,000,000. */
-	big_number *p_end = big_number_new();
-	big_number_copy(big_number_1(), p_end);
-	big_number_multiply(p_end, big_number_1000(), p_end);
-	big_number_multiply(p_end, big_number_1000(), p_end);
-	big_number_multiply(p_end, big_number_1000(), p_end);
+		/* Test up to 1,000,000,000. */
+		big_number *p_end = big_number_new();
+		big_number_copy(big_number_1(), p_end);
+		big_number_multiply(p_end, big_number_1000(), p_end);
+		big_number_multiply(p_end, big_number_1000(), p_end);
+		big_number_multiply(p_end, big_number_1000(), p_end);
 
-	while(big_number_compare(p, p_end) < 0) {
-		int is_prime = prime_numbers_is_prime(p, &elapsed_time);
+		while(big_number_compare(p, p_end) < 0) {
+			int is_prime = prime_numbers_is_prime(p, &elapsed_time);
 
 #ifdef DISPLAY_ONLY_PRIMES
-		if(is_prime) {
-			printf("%10d ticks: %s.\n", (int) elapsed_time, big_number_to_str(p));
-		}
+			if(is_prime) {
+				printf("%10d ticks: %s.\n", (int) elapsed_time, big_number_to_str(p));
+			}
 #else
-		printf("%10d ticks: %s %s prime.\n", (int) elapsed_time, big_number_to_str(p), (is_prime) ? "is" : "is not");
+			printf("%10d ticks: %s %s prime.\n", (int) elapsed_time, big_number_to_str(p), (is_prime) ? "is" : "is not");
 #endif
-		big_number_increment(p);
-	}
+			big_number_increment(p);
+		}
 
-	big_number_delete(p_end);
+		big_number_delete(p_end);
 #endif /* TEST_ALL_INTEGERS */
 
-	big_number_delete(p);
+		big_number_delete(p);
+
+		/* Complete.  Pass. */
+		rc = 0;
+		
+	} while(0);
+
+	printf("%s(): %s.\n", __func__, (rc == 0) ? "PASS" : "FAIL");
 	return rc;
 }
 #endif /* TEST */

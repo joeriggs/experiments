@@ -6,5 +6,6 @@ tags
 .gdbinit
 test
 
+# Generated files.
 *.o
-
+c_progs/crypto_algs/crypto_algs
