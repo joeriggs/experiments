@@ -121,6 +121,37 @@ int big_number_base_compare(const big_number_base *a, const big_number_base *b)
 	return rc;
 }
 
+/*******************************************************************************
+ * Returns a string that contains the contents of a big_number_base object.
+ *
+ * NOTE: This function can only handle a few strings at a time.  So don't load
+ *       too many into a printf().
+ *
+ * Input:
+ *   this - The big_number_base object to convert to a string.
+ *   zero_fill - 1 == Prepend zeroes if leading byte(s) = 0.
+ *
+ * Output:
+ *   A string that contains the number.
+ ******************************************************************************/
+const char *
+big_number_base_to_hex_str(const big_number_base *this, int zero_fill)
+{
+	static char strings[5][1024];
+	static int  strings_index = 0;
+
+	char *str = strings[strings_index];
+
+	if(++strings_index == 5) {
+		strings_index = 0;
+	}
+
+	const char *format = (zero_fill != 0) ? "%016jX" : "%jX";
+	snprintf(str, sizeof(strings[0]), format, this->num);
+
+	return str;
+}
+
 #ifdef TEST
 /********** Test Methods */
 
