@@ -122,6 +122,29 @@ int big_number_base_compare(const big_number_base *a, const big_number_base *b)
 }
 
 /*******************************************************************************
+ * Check to see if a number is negative.
+ * same.
+ *
+ * Input:
+ *   this - The object to check.
+ *
+ * Output:
+ *   Returns  1 if it is negative.
+ *   Returns  0 if it is positive.
+ *   Returns -1 if an error occurs.
+ ******************************************************************************/
+int big_number_base_is_negative(const big_number_base *this)
+{
+	int retcode = -1;
+
+	if(this != (big_number_base *) 0) {
+		retcode = (this->num < 0);
+	}
+
+	return retcode;
+}
+
+/*******************************************************************************
  * Returns a string that contains the contents of a big_number_base object.
  *
  * NOTE: This function can only handle a few strings at a time.  So don't load
@@ -142,12 +165,25 @@ big_number_base_to_hex_str(const big_number_base *this, int zero_fill)
 
 	char *str = strings[strings_index];
 
+	/* Working values. */
+	char *str_tmp = str;
+	int max_len = sizeof(strings[0]);
+
 	if(++strings_index == 5) {
 		strings_index = 0;
 	}
 
-	const char *format = (zero_fill != 0) ? "%016jX" : "%jX";
-	snprintf(str, sizeof(strings[0]), format, this->num);
+	/* Positive number don't show up with the "+" at the beginning.  So
+	 * we need to insert it manually. */
+	if(this->num >= 0) {
+		strcpy(str_tmp, "+");
+
+		str_tmp++;
+		max_len--;
+	}
+
+	const char *format = (zero_fill != 0) ? "%016X" : "%X";
+	snprintf(str_tmp, max_len, format, this->num);
 
 	return str;
 }
