@@ -18,6 +18,7 @@
 
 /* This is the big_number_base class. */
 struct big_number_base {
+	int negative;
 	uint8_t num[8];
 };
 
@@ -83,8 +84,8 @@ big_number_base_div_mod(const big_number_base *dividend,
                         big_number_base *remainder)
 {
 	if((dividend != (big_number_base *) 0) && (divisor != (big_number_base *) 0)) {
-		//printf("dividend     = %s\n", big_number_base_to_str(dividend));
-		//printf("divisor      = %s\n", big_number_base_to_str(divisor));
+		//printf("dividend     = %s\n", big_number_base_to_hex_str(dividend, 0));
+		//printf("divisor      = %s\n", big_number_base_to_hex_str(divisor, 0));
 
 		big_number_base rem;
 		big_number_base_copy(dividend, &rem);
@@ -108,7 +109,7 @@ big_number_base_div_mod(const big_number_base *dividend,
 		int digit;
 		for(digit = 0; (digit < sizeof(d2.num)) && (d2.num[digit] == 0); digit++);
 
-		//printf("divisor_mod  = %s.  Shifted %d times.  digit = %d\n", big_number_base_to_str(&d2), shift_count, digit);
+		//printf("divisor_mod  = %s.  Shifted %d times.  digit = %d\n", big_number_base_to_hex_str(&d2, 0), shift_count, digit);
 
 		while(shift_count >= 0) {
 			while(big_number_base_compare(&rem, &d2) >= 0) {
@@ -127,7 +128,7 @@ big_number_base_div_mod(const big_number_base *dividend,
 			shift_count--;
 		}
 
-		//printf("quotient = %s.  Remainder = %s.\n", big_number_base_to_str(&q), big_number_base_to_str(&rem));
+		//printf("quotient = %s.  Remainder = %s.\n", big_number_base_to_hex_str(&q, 0), big_number_base_to_hex_str(&rem, 0));
 
 		if(quotient != (big_number_base *) 0) {
 			big_number_base_copy(&q, quotient);
@@ -152,6 +153,7 @@ big_number_base *big_number_base_new(void)
 	big_number_base *this = (big_number_base *) malloc(sizeof(*this));
 	if(this != (big_number_base *) 0)
 	{
+		this->negative = 0;
 		memset(this->num, 0, sizeof(this->num));
 	}
 	return this;
@@ -180,6 +182,7 @@ void big_number_base_delete(big_number_base *this)
 void big_number_base_copy(const big_number_base *src, big_number_base *dst)
 {
 	if((src != (big_number_base *) 0) && (dst != (big_number_base *) 0)) {
+		dst->negative = src->negative;
 		memcpy(dst->num, src->num, sizeof(dst->num));
 	}
 }
@@ -206,15 +209,57 @@ void big_number_base_add(const big_number_base *addend1, const big_number_base *
 		/* Clear the result before we start. */
 		big_number_base_copy(big_number_base_0(), sum);
 
-		int i;
-		for(i = 0; i < sizeof(a1.num); i++) {
-			/* Calculate the value and check for carry. */
-			uint8_t value = (uint8_t) ((sum->num[i] + a1.num[i] + a2.num[i]) & 0xFF);
-			uint8_t carry = (uint8_t) ((sum->num[i] + a1.num[i] + a2.num[i]) >> 8);
+		/* Check to see if we're working with a mixture of positive and
+		 * negative numbers.  If we are, then we want to solve the
+		 * problem by doing subtraction. */
+		int a1_neg = big_number_base_is_negative(&a1);
+		int a2_neg = big_number_base_is_negative(&a2);
+		if(a1_neg != a2_neg) {
+			/* If |neg_num| > |pos_num|, sum is negative.
+			 * If |pos_num| > |neg_num|, sum is positive. */
+			if(a1_neg) {
+				a1.negative = 0;
+				if(big_number_base_compare(&a1, &a2) > 0) {
+					big_number_base_subtract(&a1, &a2, sum);
+					sum->negative = 1;
+				}
+				else
+				{
+					big_number_base_subtract(&a2, &a1, sum);
+					sum->negative = 0;
+				}
+			}
+			else {
+				a2.negative = 0;
+				if(big_number_base_compare(&a1, &a2) > 0) {
+					big_number_base_subtract(&a1, &a2, sum);
+					sum->negative = 0;
+				}
+				else
+				{
+					big_number_base_subtract(&a2, &a1, sum);
+					sum->negative = 1;
+				}
+			}
+		}
 
-			sum->num[i] = value;
-			if((carry > 0) && ((i + i) < sizeof(a1.num))) {
-				sum->num[i + 1] += 1;
+		else {
+
+			/* Both numbers are either positive or negative.  So
+			 * it's just a matter of simple addition of their
+			 * absolute values, and then setting the sign. */
+			sum->negative = (a1_neg == 1) ? 1 : 0;
+
+			int i;
+			for(i = 0; i < sizeof(a1.num); i++) {
+				/* Calculate the value and check for carry. */
+				uint8_t value = (uint8_t) ((sum->num[i] + a1.num[i] + a2.num[i]) & 0xFF);
+				uint8_t carry = (uint8_t) ((sum->num[i] + a1.num[i] + a2.num[i]) >> 8);
+
+				sum->num[i] = value;
+				if((carry > 0) && ((i + i) < sizeof(a1.num))) {
+					sum->num[i + 1] += 1;
+				}
 			}
 		}
 	}
@@ -231,42 +276,79 @@ void big_number_base_add(const big_number_base *addend1, const big_number_base *
 void big_number_base_subtract(const big_number_base *minuend, const big_number_base *subtrahend, big_number_base *difference)
 {
 	if((minuend != (big_number_base *) 0) && (subtrahend != (big_number_base *) 0) && (difference != (big_number_base *) 0)) {
-		/* Make a copy of the minuend.  We might need to modify if as we
-		 * work our way through the number (if we have to borrow). */
-		big_number_base min;
-		big_number_base_copy(minuend, &min);
+		int m_neg = big_number_base_is_negative(minuend);
+		int s_neg = big_number_base_is_negative(subtrahend);
 
-		/* Clear the result before we start. */
-		big_number_base_copy(big_number_base_0(), difference);
+		/* neg_num - pos_num = Addition.  Difference is negative. */
+		if((m_neg == 1) && (s_neg == 0)) {
+			big_number_base_add(minuend, subtrahend, difference);
+			difference->negative = 1;
+		}
 
-		int i;
-		for(i = 0; i < sizeof(min.num); i++) {
-			uint16_t val1 = min.num[i];
-			uint16_t val2 = subtrahend->num[i];
+		/* pos_num - neg_num = Addition.  Difference is positive. */
+		if((m_neg == 0) && (s_neg == 1)) {
+			big_number_base_add(minuend, subtrahend, difference);
+			difference->negative = 0;
+		}
 
-			/* Check to see if we need to borrow. */
-			if(val2 > val1) {
-				int x;
-				for(x = (i + 1); x < sizeof(min.num); x++) {
-					min.num[x] -= 1;
-					if(min.num[x] != 0xFF) {
-						val1 += 0x100;
+		/* neg_num - neg_num = Subtraction.
+		 * pos_num - pos_num = Subtraction. */
+		else {
+
+			/* Make a copy of the minuend and subtrahend.  We might
+			 * need to modify them as we work our way through the
+			 * number (if we have to borrow). */
+			big_number_base min_tmp, sub_tmp;
+			big_number_base_copy(minuend,    &min_tmp);
+			big_number_base_copy(subtrahend, &sub_tmp);
+
+			/* Clear the result before we start. */
+			big_number_base_copy(big_number_base_0(), difference);
+
+			/* Arrange them so that |v1| >= |v2|. */
+			big_number_base *v1, *v2;
+			min_tmp.negative = sub_tmp.negative = 0;
+			if(big_number_base_compare(&min_tmp, &sub_tmp) < 0) {
+				v1 = &sub_tmp;
+				v2 = &min_tmp;
+				difference->negative = 1;
+			}
+			else {
+				v1 = &min_tmp;
+				v2 = &sub_tmp;
+				difference->negative = 0;
+			}
+
+			/* Now subtract (v1 - v2). */
+			int i;
+			for(i = 0; i < sizeof(v1->num); i++) {
+				uint16_t val1 = v1->num[i];
+				uint16_t val2 = v2->num[i];
+
+				/* Check to see if we need to borrow. */
+				if(val2 > val1) {
+					int x;
+					for(x = (i + 1); x < sizeof(v1->num); x++) {
+						v1->num[x] -= 1;
+						if(v1->num[x] != 0xFF) {
+							val1 += 0x100;
+							break;
+						}
+					}
+					if(val1 >= val2) {
+						difference->num[i] = val1 - val2;
+					}
+
+					/* We couldn't borrow.  Give up. */
+					else {
 						break;
 					}
 				}
-				if(val1 >= val2) {
+
+				/* No need to borrow.  Straight subtraction. */
+				else {
 					difference->num[i] = val1 - val2;
 				}
-
-				/* We couldn't borrow.  Give up. */
-				else {
-					break;
-				}
-			}
-
-			/* No need to borrow.  Straight subtraction. */
-			else {
-				difference->num[i] = val1 - val2;
 			}
 		}
 	}
@@ -368,28 +450,66 @@ int big_number_base_compare(const big_number_base *a, const big_number_base *b)
 {
 	int rc = 2;
 
-	//printf("%s(): Compare %p vs %p.\n", __func__, a, b);
 	if((a != (big_number_base *) 0) && (b != (big_number_base *) 0)) {
 
-		//printf("%s(): Compare %s and %s\n", __func__, big_number_base_to_str(a), big_number_base_to_str(b));
+		do {
+			//printf("%s(): Compare %s and %s\n", __func__, big_number_base_to_hex_str(a, 0), big_number_base_to_hex_str(b, 0));
 
-		int index = sizeof(a->num);
-		rc = 0;
-
-		for(index = (sizeof(a->num) - 1); (index >= 0) && (rc == 0); index--) {
-
-			if(a->num[index] < b->num[index]) {
+			/* Perform simple positive vs negative checks. */
+			int a_neg = big_number_base_is_negative(a);
+			int b_neg = big_number_base_is_negative(b);
+			int both_neg = ((a_neg == 1) && (b_neg == 1)) ? 1 : 0;
+			if((a_neg == 1) && (b_neg == 0)) {
 				rc = -1;
+				break;
 			}
-
-			else if(a->num[index] > b->num[index]) {
+			else if((a_neg == 0) && (b_neg == 1)) {
 				rc = 1;
+				break;
 			}
 
-		} while((index > 0) && (rc == 0));
+			/* Assume they're equal. */
+			rc = 0;
+
+			int index = sizeof(a->num);
+			for(index = (sizeof(a->num) - 1); (index >= 0) && (rc == 0); index--) {
+
+				if(a->num[index] < b->num[index]) {
+					rc = both_neg ? 1 : -1;
+				}
+
+				else if(a->num[index] > b->num[index]) {
+					rc = both_neg ? -1 : 1;
+				}
+
+			} while((index > 0) && (rc == 0));
+		} while(0);
 	}
 
 	return rc;
+}
+
+/*******************************************************************************
+ * Check to see if a number is negative.
+ * same.
+ *
+ * Input:
+ *   this - The object to check.
+ *
+ * Output:
+ *   Returns  1 if it is negative.
+ *   Returns  0 if it is positive.
+ *   Returns -1 if an error occurs.
+ ******************************************************************************/
+int big_number_base_is_negative(const big_number_base *this)
+{
+	int retcode = -1;
+
+	if(this != (big_number_base *) 0) {
+		retcode = this->negative == 1;
+	}
+
+	return retcode;
 }
 
 /********** Diagnostic Methods */
@@ -414,22 +534,31 @@ big_number_base_to_hex_str(const big_number_base *this, int zero_fill)
 	static int  strings_index = 0;
 
 	char *str = strings[strings_index];
-	char *str_tmp = str;
 
 	if(++strings_index == 5) {
 		strings_index = 0;
 	}
 
+	/* Display the sign. */
+	strcpy(str, big_number_base_is_negative(this) ? "-" : "+");
+
+	/* If the number is not zero, create the string now. */
 	int i;
+	char *str_tmp = str + strlen(str);
 	for(i = (sizeof(this->num) - 1); i >= 0; i--) {
 		/* The caller can ask to skip leading zeroes. */
-		if((this->num[i] != 0) || (zero_fill == 1)) {
+		if((strlen(str) > 1) || (this->num[i] != 0) || (zero_fill == 1)) {
 			sprintf(str_tmp, "%02X", this->num[i]);
 			if(i > 0) {
 				strcat(str_tmp, ":");
 			}
 			str_tmp += strlen(str_tmp);
 		}
+	}
+
+	/* If it's zero, then the string will be empty.  Set it to "00". */
+	if(strlen(str) == 1) {
+		strcpy(str, "00");
 	}
 
 	return str;
@@ -471,45 +600,59 @@ int big_number_base_test(void)
 		/* Addition test. */
 		{
 			/* Expected result (72,461). */
-			big_number_base add_test_res = { .num[0] = 0x0D, .num[1] = 0x1B, .num[2] = 0x01 };
+			big_number_base add_test_cmp = { .num[0] = 0x0D, .num[1] = 0x1B, .num[2] = 0x01 };
 
 			/* Clear the result and run the test. */
 			big_number_base_copy(big_number_base_0(), &num3);
 			big_number_base_add(&num1, &num2, &num3);
-			if(big_number_base_compare(&num3, &add_test_res) != 0) { break; }
+			if(big_number_base_compare(&num3, &add_test_cmp) != 0) { break; }
 		}
 
-		/* Subtraction test. */
+		/* Subtraction test #1. */
 		{
 			/* Expected result (63,736). */
-			big_number_base sub_test_res = { .num[0] = 0xF8, .num[1] = 0xF8 };
+			big_number_base sub_test_cmp = { .num[0] = 0xF8, .num[1] = 0xF8 };
 
 			/* Clear the result and run the test. */
 			big_number_base_copy(big_number_base_0(), &num1);
 			big_number_base_subtract(&num3, &num2, &num1);
-			if(big_number_base_compare(&num1, &sub_test_res) != 0) { break; }
+			if(big_number_base_compare(&num1, &sub_test_cmp) != 0) { break; }
+		}
+
+		/* Subtraction test #2. */
+		{
+			/* Expected result (-5). */
+			big_number_base sub_test_val1 = { .num[0] = 0x02, .negative = 0 };
+			big_number_base sub_test_val2 = { .num[0] = 0x07, .negative = 0 };
+			big_number_base sub_test_res;
+			big_number_base sub_test_cmp =  { .num[0] = 0x05, .negative = 1 };
+
+			/* Clear the result and run the test. */
+			big_number_base_copy(big_number_base_0(), &sub_test_res);
+			big_number_base_subtract(&sub_test_val1, &sub_test_val2, &sub_test_res);
+			if(big_number_base_compare(&sub_test_res, &sub_test_cmp) != 0) { break; }
 		}
 
 		/* Multiplication test. */
 		{
 			/* Expected result (556,096,600). */
-			big_number_base mul_test_res = { .num[0] = 0x58, .num[1] = 0x5C, .num[2] = 0x25, .num[3] = 0x21 };
+			big_number_base mul_test_cmp = { .num[0] = 0x58, .num[1] = 0x5C, .num[2] = 0x25, .num[3] = 0x21 };
 	
 			/* Clear the result and run the test. */
 			big_number_base_copy(big_number_base_0(), &num3);
 			big_number_base_multiply(&num1, &num2, &num3);
-			if(big_number_base_compare(&num3, &mul_test_res) != 0) { break; }
+			if(big_number_base_compare(&num3, &mul_test_cmp) != 0) { break; }
 		}
 
 		/* Division test. */
 		{
 			/* Expected result (63,736). */
-			big_number_base div_test_res = { .num[0] = 0xF8, .num[1] = 0xF8 };
+			big_number_base div_test_cmp = { .num[0] = 0xF8, .num[1] = 0xF8 };
 
 			/* Clear the result and run the test. */
 			big_number_base_copy(big_number_base_0(), &num1);
 			big_number_base_divide(&num3, &num2, &num1);
-			if(big_number_base_compare(&num1, &div_test_res) != 0) { break; }
+			if(big_number_base_compare(&num1, &div_test_cmp) != 0) { break; }
 		}
 
 		/* Modulus test. */
@@ -517,13 +660,13 @@ int big_number_base_test(void)
 			/* 137 % 19 = 4. */
 			big_number_base mod_test_val1 = { .num[0] = 0x89 }; // 137
 			big_number_base mod_test_val2 = { .num[0] = 0x13 }; //  19
-			big_number_base mod_test_res  = { .num[0] = 0x04 }; //   4
+			big_number_base mod_test_cmp  = { .num[0] = 0x04 }; //   4
 
 			/* Clear the result and run the test. */
-			big_number_base mod_result;
-			big_number_base_copy(big_number_base_0(), &mod_result);
-			big_number_base_modulus(&mod_test_val1, &mod_test_val2, &mod_result);
-			if(big_number_base_compare(&mod_result, &mod_test_res) != 0) { break; }
+			big_number_base mod_cmpult;
+			big_number_base_copy(big_number_base_0(), &mod_cmpult);
+			big_number_base_modulus(&mod_test_val1, &mod_test_val2, &mod_cmpult);
+			if(big_number_base_compare(&mod_cmpult, &mod_test_cmp) != 0) { break; }
 		}
 
 		/* Complete.  Pass. */

@@ -559,6 +559,29 @@ int big_number_is_zero(const big_number *this)
 	return rc;
 }
 
+/*******************************************************************************
+ * Check to see if a number is negative.
+ * same.
+ *
+ * Input:
+ *   this - The object to check.
+ *
+ * Output:
+ *   Returns  1 if it is negative.
+ *   Returns  0 if it is positive.
+ *   Returns -1 if an error occurs.
+ ******************************************************************************/
+int big_number_is_negative(const big_number *this)
+{
+	int retcode = -1;
+
+	if(this != (big_number *) 0) {
+		retcode = big_number_base_is_negative(this->num);
+	}
+
+	return retcode;
+}
+
 /********** Diagnostic Methods */
 
 /*******************************************************************************
@@ -693,7 +716,7 @@ int big_number_test(void)
 		if(strcmp(big_number_to_dec_str(test_obj1), "123") != 0) { break; }
 
 		/* test _to_hex_str(). */
-		if(strcmp(big_number_to_hex_str(test_obj1, 0), "7B") != 0) { break; }
+		if(strcmp(big_number_to_hex_str(test_obj1, 0), "+7B") != 0) { break; }
 
 		/* Test the constants.  These tests basically test each other
 		 * by using each other to verify their values.  This set of

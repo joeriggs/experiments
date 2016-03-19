@@ -64,6 +64,8 @@ int big_number_compare(const big_number *a, const big_number *b);
 
 int big_number_is_zero(const big_number *this);
 
+int big_number_is_negative(const big_number *this);
+
 /********** Diagnostic Methods */
 
 int big_number_from_str(big_number *this, const char *str);
