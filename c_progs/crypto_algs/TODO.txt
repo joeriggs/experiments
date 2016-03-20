@@ -1,5 +1,1 @@
-- Fix memory leaks.
-  - Lots of big_number objects are created but not deleted.
-
-- Negative numbers in big_number_base_full.c
 

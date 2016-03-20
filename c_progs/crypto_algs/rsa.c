@@ -47,47 +47,61 @@ calculate_d(big_number *p,
             big_number *e,
             big_number *d)
 {
+	int retcode = 1;
+
 	//PRINTF("Calculate d from p %s, q %s, e %s.\n", big_number_to_dec_str(p),
 	//         big_number_to_dec_str(q), big_number_to_dec_str(e));
 
 	/* FYI: n = (p * q). */
 
-	/* Calculate phi (p - 1) * (q - 1). */
-	big_number *phi = big_number_new();
-	calculate_phi(p, q, phi);
-	//PRINTF("          phi = %s.\n", big_number_to_dec_str(phi));
+	big_number *phi   = 0;
+	big_number *tmp   = 0;
+	big_number *zero  = 0;
+	big_number *val1a = 0;
+	big_number *val1b = 0;
+	big_number *val2a = 0;
+	big_number *val2b = 0;
+	big_number *x     = 0;
+	big_number *val1c = 0;
+	big_number *val2c = 0;
 
-	/* Make sure e doesn't share a factor with phi. */
-	if(big_number_modulus_is_zero(phi, e) == 1) {
-		//PRINTF("e won't work (%s mod %s != 0).\n", big_number_to_dec_str(phi), big_number_to_dec_str(e));
-		return 1;
-	}
+	do {
+		/* Calculate phi (p - 1) * (q - 1). */
+		phi   = big_number_new();
+		tmp   = big_number_new();
+		zero  = big_number_new();
+		val1a = big_number_new();
+		val1b = big_number_new();
+		val1c = big_number_new();
+		val2a = big_number_new();
+		val2b = big_number_new();
+		val2c = big_number_new();
+		x     = big_number_new();
+		if(!phi || !tmp || !zero || !val1a || !val1b || !val1c || !val2a || !val2b || !val2c || !x) {
+			break;
+		}
 
-	/* Calculate d using the Extended Euclidian Algorithm. */
-	big_number *tmp =  big_number_new();
-	big_number *zero = big_number_new();
-	{
-		big_number *val1a = big_number_new();
+		calculate_phi(p, q, phi);
+		//PRINTF("          phi = %s.\n", big_number_to_dec_str(phi));
+
+		/* Make sure e doesn't share a factor with phi. */
+		if(big_number_modulus_is_zero(phi, e) == 1) {
+			//PRINTF("e won't work (%s mod %s != 0).\n", big_number_to_dec_str(phi), big_number_to_dec_str(e));
+			break;
+		}
+
 		big_number_copy(phi, val1a);
-
-		big_number *val1b = big_number_new();
 		big_number_copy(e, val1b);
-
-		big_number *val2a = big_number_new();
 		big_number_copy(phi, val2a);
-
-		big_number *val2b = big_number_new();
 		big_number_copy(big_number_1(), val2b);
 
+		/* Calculate d using the Extended Euclidian Algorithm. */
 		do {
-			big_number *x = big_number_new();
 			big_number_divide(val1a, val1b, x);
 
-			big_number *val1c = big_number_new();
 			big_number_multiply(x, val1b, tmp);
 			big_number_subtract(val1a, tmp, val1c);
 
-			big_number *val2c = big_number_new();
 			big_number_multiply(x, val2b, tmp);
 			big_number_subtract(val2a, tmp, val2c);
 
@@ -107,21 +121,36 @@ calculate_d(big_number *p,
 
 		big_number_copy(val2b, d);
 		//PRINTF("          d = %s.\n", big_number_to_dec_str(d));
-	}
 
-	/* Test e and d.  (e * d) mod phi = 1. */
-	big_number_multiply(e, d, tmp);
-	big_number_modulus(tmp, phi, tmp);
-	if(big_number_compare(tmp, big_number_1()) != 0) {
-		//PRINTF("e and d don't work (%s & %s) %s.\n", big_number_to_dec_str(e),
-		//        big_number_to_dec_str(d), big_number_to_dec_str(phi));
-		return 1;
-	}
+		/* Test e and d.  (e * d) mod phi = 1. */
+		big_number_multiply(e, d, tmp);
+		big_number_modulus(tmp, phi, tmp);
+		if(big_number_compare(tmp, big_number_1()) != 0) {
+			//PRINTF("e and d don't work (%s & %s) %s.\n", big_number_to_dec_str(e),
+			//        big_number_to_dec_str(d), big_number_to_dec_str(phi));
+			break;
+		}
 
-	//PRINTF("Done: p %s: q %s: phi %s: e %s: d %s.\n", big_number_to_dec_str(p), big_number_to_dec_str(q),
-	//         big_number_to_dec_str(phi), big_number_to_dec_str(e), big_number_to_dec_str(d));
+		//PRINTF("Done: p %s: q %s: phi %s: e %s: d %s.\n", big_number_to_dec_str(p), big_number_to_dec_str(q),
+		//         big_number_to_dec_str(phi), big_number_to_dec_str(e), big_number_to_dec_str(d));
 
-	return 0;
+		retcode = 0;
+
+	} while(0);
+
+	/* Clean up. */
+	big_number_delete(val2c);
+	big_number_delete(val1c);
+	big_number_delete(x);
+	big_number_delete(val2b);
+	big_number_delete(val2a);
+	big_number_delete(val1b);
+	big_number_delete(val1a);
+	big_number_delete(zero);
+	big_number_delete(tmp);
+	big_number_delete(phi);
+
+	return retcode;
 }
 
 /*******************************************************************************
@@ -156,7 +185,6 @@ int rsa_test(void)
 	int rc = 1;
 
 	do {
-
 		typedef struct test_data {
 			const char *p;
 			const char *q;

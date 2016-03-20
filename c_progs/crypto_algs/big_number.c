@@ -480,6 +480,7 @@ void big_number_exponent(const big_number *base, const big_number *exp, big_numb
 
 		big_number_delete(e);
 		big_number_delete(b);
+		big_number_delete(b1);
 	}
 }
 
