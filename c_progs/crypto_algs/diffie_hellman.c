@@ -19,8 +19,14 @@
 #include <sys/socket.h>
 #include <sys/syscall.h>
 #include <sys/types.h>
+#include <sys/un.h>
 
 #include "diffie_hellman.h"
+
+#define CHANNEL "./unix_socket"
+
+/* Used to synchronize activities between the client and server threads. */
+pthread_mutex_t mutex;
 
 /*******************************************************************************
  *
@@ -53,32 +59,43 @@ static void *server_thread(void *arg)
 	{
 		int ret;
 
-		int sock = socket(AF_INET, SOCK_STREAM, 0);
+		unlink(CHANNEL);
+
+		int sock = socket(PF_UNIX, SOCK_STREAM, 0);
+		//printf("Called socket().\n");
 		if(sock < 0) break;
 
-		struct sockaddr_in sin;
-		sin.sin_family = AF_INET;
-		inet_aton("127.0.0.1", &sin.sin_addr);
-		sin.sin_port = htons(2345);
-		ret = bind(sock, (struct sockaddr *) &sin, sizeof(sin));
+		struct sockaddr_un address;
+		memset(&address, 0, sizeof(address));
+
+		address.sun_family = PF_UNIX;
+		strncpy(address.sun_path, CHANNEL, sizeof(address.sun_path));
+		ret = bind(sock, (struct sockaddr *) &address, sizeof(address));
+		//printf("Called bind(): ret = %d.\n", ret);
 		if(ret != 0) break;
 
 		ret = listen(sock, 10);
+		//printf("Called listen().\n");
 		if(ret != 0) break;
+
+		ret = pthread_mutex_unlock(&mutex);
+		//printf("%s(): pthread_mutex_unlock(%p) returned %d.\n", __func__, &mutex, ret);
+		if(ret != 0) { break; }
 
 		struct sockaddr clnt_addr;
 		socklen_t       clnt_addr_len = sizeof(clnt_addr);
 		int clnt_sock = accept(sock, &clnt_addr, &clnt_addr_len);
+		//printf("Called accept().\n");
 		if(clnt_sock == -1) break;
 
 		int64_t modulus;
 		if(read(clnt_sock, &modulus, sizeof(modulus)) != sizeof(modulus)) {
-			//printf("Can't read modulus..\n");
+			printf("Can't read modulus..\n");
 		}
 
 		int64_t generator;
 		if(read(clnt_sock, &generator, sizeof(generator)) != sizeof(generator)) {
-			//printf("Can't read generator..\n");
+			printf("Can't read generator..\n");
 		}
 
 		/* Create your own private prime number. */
@@ -118,13 +135,20 @@ static void *client_thread(void *arg)
 
 	do
 	{
-		int sock = socket(AF_INET, SOCK_STREAM, 0);
+		/* Wait for the server thread to create the server-side part
+		 * of the socket pair. */
+		int ret = pthread_mutex_lock(&mutex);
+		//printf("%s(): pthread_mutex_lock(%p) returned %d.\n", __func__, &mutex, ret);
+		if(ret != 0) { break; }
+
+		int sock = socket(PF_UNIX, SOCK_STREAM, 0);
 		if(sock < 0) break;
 
-		struct sockaddr_in srvr;
-		srvr.sin_family = AF_INET;
-		srvr.sin_port   = htons(2345);
-		inet_aton("127.0.0.1", &srvr.sin_addr);
+		struct sockaddr_un srvr;
+		memset(&srvr, 0, sizeof(srvr));
+
+		srvr.sun_family = AF_UNIX;
+		strncpy(srvr.sun_path, CHANNEL, sizeof(srvr.sun_path));
 
 		/* Keep trying until we connect to the server.  If we come up before the
 		 * server thread we might get to this point before the server is ready.
@@ -133,6 +157,7 @@ static void *client_thread(void *arg)
 			if(connect(sock, (struct sockaddr *) &srvr, sizeof(srvr)) == 0) {
 				break;
 			}
+			//printf("%s(): sleeping\n", __func__);
 			sleep(1);
 		}
 
@@ -172,9 +197,17 @@ int diffie_hellman_test(void)
 	int rc = 1;
 
 	do {
-
 		pthread_attr_t attr;
 		pthread_attr_init(&attr);
+
+		/* Initialize and lock the mutex now.  Then create the server
+		 * thread.  The thread will create a server-side socket, and
+		 * then it will release the mutex (thus allowing us to start
+		 * the client thread). */
+		pthread_mutex_init(&mutex, NULL);
+		rc = pthread_mutex_lock(&mutex);
+		//printf("%s(): pthread_mutex_lock(%p) returned %d.\n", __func__, &mutex, rc);
+		if(rc != 0) { break; }
 
 		pthread_t server;
 		rc = pthread_create(&server, &attr, server_thread, (void *) 1);
