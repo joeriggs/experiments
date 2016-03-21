@@ -52,6 +52,8 @@ static int64_t do_exponentiation(int64_t base, int64_t exp)
 static void *server_thread(void *arg)
 {
 	int retval = -1;
+	int sock = -1;
+	int clnt_sock = -1;
 
 	//printf("%s(%p): This is the server thread.\n", __func__, arg);
 
@@ -61,8 +63,8 @@ static void *server_thread(void *arg)
 
 		unlink(CHANNEL);
 
-		int sock = socket(PF_UNIX, SOCK_STREAM, 0);
-		//printf("Called socket().\n");
+		sock = socket(PF_UNIX, SOCK_STREAM, 0);
+		//printf("%s(): socket() returned %d.\n", __func__, sock);
 		if(sock < 0) break;
 
 		struct sockaddr_un address;
@@ -84,18 +86,18 @@ static void *server_thread(void *arg)
 
 		struct sockaddr clnt_addr;
 		socklen_t       clnt_addr_len = sizeof(clnt_addr);
-		int clnt_sock = accept(sock, &clnt_addr, &clnt_addr_len);
-		//printf("Called accept().\n");
+		clnt_sock = accept(sock, &clnt_addr, &clnt_addr_len);
+		//printf("%s(): accept() returned %d.\n", __func__, clnt_sock);
 		if(clnt_sock == -1) break;
 
 		int64_t modulus;
 		if(read(clnt_sock, &modulus, sizeof(modulus)) != sizeof(modulus)) {
-			printf("Can't read modulus..\n");
+			//printf("Can't read modulus..\n");
 		}
 
 		int64_t generator;
 		if(read(clnt_sock, &generator, sizeof(generator)) != sizeof(generator)) {
-			printf("Can't read generator..\n");
+			//printf("Can't read generator..\n");
 		}
 
 		/* Create your own private prime number. */
@@ -111,13 +113,17 @@ static void *server_thread(void *arg)
 		read(clnt_sock, &val2, sizeof(val2));
 		//printf("SERVER: %jd.\n", (do_exponentiation(val2, pri) % modulus));
 
-		ret = close(sock);
-		if(ret != 0) break;
-
 		/* Success. */
-		retval = 0;
+		retval = val2;
 
 	} while(0);
+
+	if(sock != -1) {
+		close(sock);
+	}
+	if(clnt_sock != -1) {
+		close(clnt_sock);
+	}
 
 	return (void *) retval;
 }
@@ -130,6 +136,7 @@ static void *server_thread(void *arg)
 static void *client_thread(void *arg)
 {
 	int retval = -1;
+	int sock = -1;
 
 	//printf("%s(%p): This is the client thread.\n", __func__, arg);
 
@@ -141,7 +148,8 @@ static void *client_thread(void *arg)
 		//printf("%s(): pthread_mutex_lock(%p) returned %d.\n", __func__, &mutex, ret);
 		if(ret != 0) { break; }
 
-		int sock = socket(PF_UNIX, SOCK_STREAM, 0);
+		sock = socket(PF_UNIX, SOCK_STREAM, 0);
+		//printf("%s(): socket() returned %d.\n", __func__, sock);
 		if(sock < 0) break;
 
 		struct sockaddr_un srvr;
@@ -180,10 +188,15 @@ static void *client_thread(void *arg)
 		//printf("CLIENT: %jd.\n", (do_exponentiation(val2, pri) % modulus));
 
 		/* Success. */
-		close(sock);
-		retval = 0;
+		retval = val2;
 
 	} while(0);
+
+	/* Close the socket. */
+	if(sock != -1) {
+		//printf("%s(): Calling close(%d).\n", __func__, sock);
+		close(sock);
+	}
 
 	return (void *) retval;
 }
@@ -217,14 +230,23 @@ int diffie_hellman_test(void)
 		rc = pthread_create(&client, &attr, client_thread, (void *) 1);
 		if(rc != 0) { break; }
 
-		void *thread_rc;
-		int thread_int_rc;
-		rc = pthread_join(server, &thread_rc);
-		thread_int_rc = (int) thread_rc;
+		void *server_thread_rc;
+		rc = pthread_join(server, &server_thread_rc);
+		int server_rc = (int) server_thread_rc;
+		//printf("%s(): pthread_join(server) returned %d: retcode = %d.\n", __func__, rc, server_rc);
 		if(rc != 0) { break; }
 
-		rc = pthread_join(client, &thread_rc);
+		void *client_thread_rc;
+		rc = pthread_join(client, &client_thread_rc);
+		int client_rc = (int) client_thread_rc;
+		//printf("%s(): pthread_join(client) returned %d: retcode = %d.\n", __func__, rc, client_rc);
 		if(rc != 0) { break; }
+
+		/* Compare results (do they match?). */
+		if(server_rc != client_rc) { break; }
+
+		/* Success. */
+		rc = 0;
 
 	} while(0);
 
