@@ -80,10 +80,11 @@ int main(int argc, char **argv)
 			int nbytes;
 			char buffer[256];
 
+			memset(buffer, 0, sizeof(buffer));
 			nbytes = read(connection_fd, buffer, 256);
-			buffer[nbytes] = 0;
+			printf("Read %d bytes from agent.\n", nbytes);
 
-			printf("MESSAGE FROM CLIENT: %s\n", buffer);
+			printf("MESSAGE FROM CLIENT (%d): %s\n", nbytes, buffer);
 			nbytes = snprintf(buffer, 256, "hello from the server");
 			nbytes = write(connection_fd, buffer, nbytes);
 		}
