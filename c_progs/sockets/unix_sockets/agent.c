@@ -5,7 +5,7 @@
 #include <unistd.h>
 #include <string.h>
 
-#define CHANNEL      "/var/run/testing.sock"
+#define CHANNEL      "/tmp/testing.sock"
 
 int main(int argc, char **argv)
 {
@@ -13,7 +13,7 @@ int main(int argc, char **argv)
 	int  socket_fd, nbytes;
 	char buffer[256];
 
-	printf("This is the tf_sync agent test program.\n");
+	printf("This is the UNIX socket client.\n");
 
 	socket_fd = socket(PF_UNIX, SOCK_STREAM, 0);
 	if(socket_fd < 0)
@@ -36,7 +36,7 @@ int main(int argc, char **argv)
 
 	int i;
 	for(i = 0; i < 10; i++) {
-		sleep(1);
+		usleep(100 * 1000); // 100ms
 
 		nbytes = snprintf(buffer, 256, "hello from a client");
 		write(socket_fd, buffer, nbytes);
