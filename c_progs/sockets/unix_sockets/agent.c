@@ -41,11 +41,11 @@ int main(int argc, char **argv)
 	int retcode;
 	do {
 		printf("TRYING...\n");
-		usleep(1 * 1000 * 1000);
 		socklen_t address_length = sizeof(address);
 		retcode = connect(socket_fd, (struct sockaddr *) &address, sizeof(struct sockaddr_un));
 		if(retcode == -1) {
 			printf("connect() returned %d (%s).\n", errno, strerror(errno));
+			usleep(1 * 1000 * 1000);
 		}
 
 	} while ((retcode == -1) && ((errno == ENOENT) || (errno == ECONNREFUSED)));
@@ -60,21 +60,22 @@ int main(int argc, char **argv)
 
 	int i = 0;
 	while(i < 10) {
-		usleep(100 * 1000); // 100ms
-
 		nbytes = snprintf(buffer, 256, "hello from a client");
-		nbytes = write(socket_fd, buffer, nbytes);
-		printf("Wrote %d bytes to server.\n", nbytes);
+		nbytes = send(socket_fd, buffer, nbytes, 0);
+		printf("TX %d bytes to server (%d).\n", nbytes, errno);
  
-		memset(buffer, 0, sizeof(buffer));
-		nbytes = read(socket_fd, buffer, 256);
-		if(nbytes >= 0) {
-			printf("MESSAGE FROM SERVER (%d): %s\n", nbytes, buffer);
-			i++;
-		}
-		else {
-			printf("read() failed (%d : %s).\n", errno, strerror(errno));
-		}
+		do {
+			memset(buffer, 0, sizeof(buffer));
+			nbytes = recv(socket_fd, buffer, 256, 0);
+			if(nbytes >= 0) {
+				printf("RX %d bytes from server: %s\n", nbytes, buffer);
+				i++;
+			}
+			else {
+				printf("recv() failed (%d : %s).\n", errno, strerror(errno));
+				usleep(500 * 1000);
+			}
+		} while(nbytes == -1);
 	}
 
 	close(socket_fd);
