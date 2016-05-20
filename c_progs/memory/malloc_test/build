@@ -1,11 +1,13 @@
 #!/bin/sh
 
-#gcc malloc_test.c -O0 -g -o malloc_test -l pthread
-#[ "$?" != "0" ] && exit 1
+for file in malloc_test.c realloc_test.c proc_status_test.c; do
 
-gcc realloc_test.c -O0 -g -o realloc_test
-[ "$?" != "0" ] && exit 1
-./realloc_test
+  echo "Compiling ${file}"
+
+  gcc ${file} -O0 -g -o `basename ${file} .c` -l pthread
+  [ "$?" != "0" ] && exit 1
+
+done
 
 exit 0
 
