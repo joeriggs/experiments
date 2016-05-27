@@ -44,18 +44,10 @@ static void print_proc_stats(pid_t pid)
 
 static void print_status_vm_values(pid_t pid)
 {
-  int rc;
-
-  if(fork() == 0) {
-    char file[1024];
-    snprintf(file, sizeof(file), "/proc/%d/status", pid);
-    rc = execlp("grep", "", "Vm", file, (char *) 0);
-    printf("execlp() returned %d (%d)\n", rc, errno);
-  }
-  else {
-    /* Should waitpid() for the child to terminate, but this is easier. */
-    sleep(2);
-  }
+  char cmd[1024];
+  snprintf(cmd, sizeof(cmd), "grep Vm /proc/%d/status", pid);
+  int rc = system(cmd);
+  printf("system() returned %d (%d)\n", rc, errno);
 }
 
 int main(int argc, char **argv)
