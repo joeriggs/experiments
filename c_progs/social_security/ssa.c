@@ -1,27 +1,8 @@
 /*******************************************************************************
  * This file contains the implementation of the algorithms that are used to
  * calculate or estimate the Social Security benefits for a retiree.
- ******************************************************************************/
-
-#include <stdio.h>
-#include <string.h>
-
-#include "ssa.h"
-
-#define min(a, b) ((a) < (b) ? (a) : (b))
-
-#define TOTAL_HIGHEST_INDEXED_EARNINGS 35
-
-/* Average Wage Index (a.k.a. AWI) Table, taken from:
- *   https://www.ssa.gov/oact/COLA/AWI.html
  *
- * Dates after 2014 are estimated using data from this page:
- *   https://www.ssa.gov/oact/TR/TRassum.html
- *
- * A description of how to use this table can be found at:
- *   https://www.ssa.gov/oact/ProgData/retirebenefit1.html
- *
- * Here's a simple description of how the AWI Table is used:
+ * Here's a simple description of how it all works:
  * - The AWI Table contains the AWI for each year, going back to 1951.
  * - It is used to calculate the "indexing factor" for each year that a person
  *   worked and earned wages.
@@ -43,6 +24,123 @@
  * - AWI(1976) =  9,226.48
  * - Indexing Factor = 46,481.52 / 9,226.48 = 5.0378.
  * - Indexed Earnings for 1976 for this worker = Nominal_Earnings * 5.0378
+ *
+ ******************************************************************************/
+
+#include <stdio.h>
+#include <string.h>
+
+#include "ssa.h"
+
+#define min(a, b) ((a) < (b) ? (a) : (b))
+
+#define TOTAL_HIGHEST_INDEXED_EARNINGS 35
+
+/* Contribution and Benefit Base Table.  Taken from:
+ *   https://www.ssa.gov/oact/COLA/cbb.html
+ *
+ * This table represents the maximum earnings for each year.
+ */
+typedef struct maximum_wage {
+  int year;
+  int wage;
+} maximum_wage;
+
+static maximum_wage
+maximum_earnings[] = {
+  { 1937,   3000 },
+  { 1938,   3000 },
+  { 1939,   3000 },
+  { 1940,   3000 },
+  { 1941,   3000 },
+  { 1942,   3000 },
+  { 1943,   3000 },
+  { 1944,   3000 },
+  { 1945,   3000 },
+  { 1946,   3000 },
+  { 1947,   3000 },
+  { 1948,   3000 },
+  { 1949,   3000 },
+  { 1950,   3000 },
+  { 1951,   3600 },
+  { 1952,   3600 },
+  { 1953,   3600 },
+  { 1954,   3600 },
+  { 1955,   4200 },
+  { 1956,   4200 },
+  { 1957,   4200 },
+  { 1958,   4200 },
+  { 1959,   4800 },
+  { 1960,   4800 },
+  { 1961,   4800 },
+  { 1962,   4800 },
+  { 1963,   4800 },
+  { 1964,   4800 },
+  { 1965,   4800 },
+  { 1966,   6600 },
+  { 1967,   6600 },
+  { 1968,   7800 },
+  { 1969,   7800 },
+  { 1970,   7800 },
+  { 1971,   7800 },
+  { 1972,   9000 },
+  { 1973,  10800 },
+  { 1974,  13200 },
+  { 1975,  14100 },
+  { 1976,  15300 },
+  { 1977,  16500 },
+  { 1978,  17700 },
+  { 1979,  22900 },
+  { 1980,  25900 },
+  { 1981,  29700 },
+  { 1982,  32400 },
+  { 1983,  35700 },
+  { 1984,  37800 },
+  { 1985,  39600 },
+  { 1986,  42000 },
+  { 1987,  43800 },
+  { 1988,  45000 },
+  { 1989,  48000 },
+  { 1990,  51300 },
+  { 1991,  53400 },
+  { 1992,  55500 },
+  { 1993,  57600 },
+  { 1994,  60600 },
+  { 1995,  61200 },
+  { 1996,  62700 },
+  { 1997,  65400 },
+  { 1998,  68400 },
+  { 1999,  72600 },
+  { 2000,  76200 },
+  { 2001,  80400 },
+  { 2002,  84900 },
+  { 2003,  87000 },
+  { 2004,  87900 },
+  { 2005,  90000 },
+  { 2006,  94200 },
+  { 2007,  97500 },
+  { 2008, 102000 },
+  { 2009, 106800 },
+  { 2010, 106800 },
+  { 2011, 106800 },
+  { 2012, 110100 },
+  { 2013, 113700 },
+  { 2014, 117000 },
+  { 2015, 118500 },
+  { 2016, 118500 }
+};
+#define NUM_MAXIMUM_EARNINGS_ENTRIES (sizeof(maximum_earnings) / sizeof(maximum_wage))
+
+/* Average Wage Index (a.k.a. AWI) Table, taken from:
+ *   https://www.ssa.gov/oact/COLA/AWI.html
+ *
+ * Dates after 2014 can be estimated using data from this page, but we aren't
+ * doing that estimation.  It looks like the ssa.gov website doesn't, so we will
+ * do the same as them.
+ *   https://www.ssa.gov/oact/TR/TRassum.html
+ *
+ * A description of how to use this table can be found at:
+ *   https://www.ssa.gov/oact/ProgData/retirebenefit1.html
  */
 typedef struct average_wage_index {
   int year;
@@ -114,25 +212,7 @@ awi[] = {
   { 2011,  42979.61 },
   { 2012,  44321.67 },
   { 2013,  44888.16 },
-  { 2014,  46481.52 },
-  { 2015,  48015.41 },
-  { 2016,  50608.24 },
-  { 2018,  53189.26 },
-  { 2019,  55689.16 },
-  { 2019,  58306.55 },
-  { 2020,  60872.04 },
-  { 2021,  63550.41 },
-  { 2022,  66219.53 },
-  { 2023,  68934.53 },
-  { 2024,  71622.97 },
-  { 2025,  74416.27 },
-  { 2026,  77318.50 },
-  { 2027,  80333.93 },
-  { 2028,  83466.95 },
-  { 2029,  86722.16 },
-  { 2030,  90104.32 },
-  { 2031,  93618.39 },
-  { 2032,  97269.51 }
+  { 2014,  46481.52 }
 };
 #define NUM_AWI_ENTRIES (sizeof(awi) / sizeof(average_wage_index))
 
@@ -190,7 +270,7 @@ bend_points[] = {
   { 2015, 826, 4980, 1056, 1524, 1987 },
   { 2016, 856, 5157, 1093, 1578, 2058 }
 };
-#define NUM_BEND_POINT_ENTRIES (sizeof(bend_points) / sizeof(bend_point))
+#define NUM_BEND_POINTS_ENTRIES (sizeof(bend_points) / sizeof(bend_point))
 
 /* This is the list of highest indexed earnings. */
 static int highest_indexed_earnings[TOTAL_HIGHEST_INDEXED_EARNINGS] = { 0 };
@@ -201,19 +281,44 @@ static int total_indexed_earnings = 0;
 /* This is the calculated Average Indexed Monthly Earnings (AIME). */
 static int AIME = 0;
 
-/* This function returns a pointer to the average wage index, not the actual
- * index.  Returning a pointer allows the ability to fail (by returning a NULL
- * pointer) if the requested year isn't in the table. */
-static float *
+/* This function returns the maximum earnings for the specified year.  If the
+ * year doesn't exist in the table, then the maximum earnings for the last year
+ * in the table is returned.  The requested year is probably later than any of
+ * the data in the table, so it makes sense to keep using the most recent year.
+ */
+static int
+maximum_earnings_get(int year)
+{
+  /* Default to the last entry in the table. */
+  int result = maximum_earnings[NUM_MAXIMUM_EARNINGS_ENTRIES - 1].wage;
+
+  int i;
+  for(i = 0; i < NUM_MAXIMUM_EARNINGS_ENTRIES; i++) {
+    maximum_wage *w = &maximum_earnings[i];
+    if(w->year == year) {
+      result = w->wage;
+      break;
+    }
+  }
+
+  //printf("Maximum earnings for %d is $%d\n", year, result);
+  return result;
+}
+
+/* This function returns the average wage index for the specified year.  If
+ * the year isn't present in the table, then it returns the AWI for the final
+ * year in the table.  This covers situations where a younger person is using
+ * the tool. */
+static float
 average_wage_index_get(int year)
 {
-  float *result = (float *) 0;
+  float result = awi[NUM_AWI_ENTRIES - 1].index;
 
   int i;
   for(i = 0; i < NUM_AWI_ENTRIES; i++) {
     average_wage_index *a = &awi[i];
     if(a->year == year) {
-      result = &a->index;
+      result = a->index;
       break;
     }
   }
@@ -221,10 +326,13 @@ average_wage_index_get(int year)
   return result;
 }
 
-/* This function returns pointers to the bend1 and bend2 points for the PIA
- * calculation, not the actual bend points themselves.  Returning pointers
- * allows the ability to fail (by returning NULL pointers) if the requested year
- * isn't in the table. */
+/* This function returns the bend points for the year the person turns 62.  The
+ * bend points are used in the PIA calculation.
+ *
+ * If there aren't bend points for a person born in the specified year, then we
+ * return the bend points for the last year in the table.  This will cover folks
+ * who are too young to retire yet.
+ */
 static int
 bend_points_get(int dob,
                 int *bend1,
@@ -232,10 +340,14 @@ bend_points_get(int dob,
 {
   int retcode = 1;
 
+  bend_point *p = &bend_points[NUM_BEND_POINTS_ENTRIES - 1];
+  *bend1 = p->pia_bend1;
+  *bend2 = p->pia_bend2;
+
   int age_62 = dob + 62;
   int i;
-  for(i = 0; i < NUM_BEND_POINT_ENTRIES; i++) {
-    bend_point *p = &bend_points[i];
+  for(i = 0; i < NUM_BEND_POINTS_ENTRIES; i++) {
+    p = &bend_points[i];
     if(p->year == age_62) {
       *bend1 = p->pia_bend1;
       *bend2 = p->pia_bend2;
@@ -262,11 +374,9 @@ calc_indexing_factor(int dob,
 
   /* If the person is less than age 60, calculate their indexing factor. */
   else {
-    float *awi_60 = average_wage_index_get(age_60);
-    float *awi    = average_wage_index_get(year);
-    if((awi_60 != (float *) 0) && (awi != (float *) 0)) {
-      indexing_factor = *awi_60 / *awi;
-    }
+    float awi_60 = average_wage_index_get(age_60);
+    float awi    = average_wage_index_get(year);
+    indexing_factor = awi_60 / awi;
   }
 
   return indexing_factor;
@@ -291,11 +401,17 @@ int ssa_add_wage(int dob,
 {
   int retcode = 0;
 
+  /* If the person earned more than the maximum allowed, then adjust their
+   * wage down to the maximum allowed amount for that year. */
+  int maximum_earnings = maximum_earnings_get(year);
+  int allowed_wage = min(wage, maximum_earnings);
+  //printf("allowed_wage for %d is %d.\n", year, allowed_wage);
+
   float indexing_factor = calc_indexing_factor(dob, year);
-  int indexed_earnings = wage * indexing_factor;
+  int indexed_earnings = allowed_wage * indexing_factor;
 
   /* Do we need to round indexed_earnings up? */
-  float ie = wage * indexing_factor;
+  float ie = allowed_wage * indexing_factor;
   float a = indexed_earnings;
   a += 0.5;
   if(ie >= a) {
@@ -332,31 +448,39 @@ int ssa_calc_benefit(int dob, int *PIA)
 
   int i;
   for(i = 0; i < TOTAL_HIGHEST_INDEXED_EARNINGS; i++) {
+    //printf("highest_indexed_earnings[%d] = %7d\n", i, highest_indexed_earnings[i]);
     total_indexed_earnings += highest_indexed_earnings[i];
   }
   AIME = total_indexed_earnings / (TOTAL_HIGHEST_INDEXED_EARNINGS * 12);
+  //printf("total_indexed_earnings = %8d.  AIME = %6d.\n", total_indexed_earnings, AIME);
 
   int bend1 = 0;
   int bend2 = 0;
   bend_points_get(dob, &bend1, &bend2);
+  //printf("bend1 = %d.  bend2 = %d.\n", bend1, bend2);
 
   /* Calculate the Primary Insurance Amount (PIA) (i.e. the Social Security benefit. */
   int temp_AIME = AIME;
 
   int bend1_amt = min(bend1, temp_AIME);
-  float bend1_benefit_float = bend1_amt * 0.9;
+  float bend1_benefit_float = bend1_amt * 0.90;
   int bend1_benefit = bend1_benefit_float;
+  //printf("bend1_amt = %d.  bend1_benefit =  %d.\n", bend1_amt, bend1_benefit);
   temp_AIME -= bend1_amt;
 
   int bend2_amt = min((bend2 - bend1), temp_AIME);
-  float bend2_benefit_float = bend2_amt * .32;
+  float bend2_benefit_float = bend2_amt * 0.32;
   int bend2_benefit = bend2_benefit_float;
+  //printf("bend2_amt = %d.  bend2_benefit =  %d.\n", bend2_amt, bend2_benefit);
   temp_AIME -= bend2_amt;
 
-  float more_benefit_float = .15 * temp_AIME;
+  int more_amt = temp_AIME;
+  float more_benefit_float = 0.15 * more_amt;
   int more_benefit = more_benefit_float;
+  //printf("more_amt = %d.  more_benefit = %d.\n", more_amt, more_benefit);
 
   *PIA = bend1_benefit + bend2_benefit + more_benefit;
+  //printf("PIA %d.\n", *PIA);
 
   return retcode;
 }
