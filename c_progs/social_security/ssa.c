@@ -482,6 +482,64 @@ int ssa_calc_benefit(int dob, int *PIA)
   *PIA = bend1_benefit + bend2_benefit + more_benefit;
   //printf("PIA %d.\n", *PIA);
 
+  {
+    /* For illustrative purposes only, show the PIA for different ages (early
+     * and late retirement ages).  This data assumes the person has a full
+     * retirement age of 67.
+     *
+     * According to the information at:
+     *    https://www.ssa.gov/oact/quickcalc/early_late.html#late
+     *
+     * In the case of early retirement, a benefit is reduced 5/9 of one percent
+     * for each month before normal retirement age, up to 36 months. If the
+     * number of months exceeds 36, then the benefit is further reduced 5/12 of
+     * one percent per month.
+     *
+     * For example, if the number of reduction months is 60 (the maximum number
+     * for retirement at 62 when normal retirement age is 67), then the benefit
+     * is reduced by 30 percent. This maximum reduction is calculated as 36
+     * months times 5/9 of 1 percent plus 24 months times 5/12 of 1 percent. */
+
+    /* Comment added by me: For late retirement, an additional 8% is added per
+     * year. */
+    float PIA_f = *PIA;
+
+    int PIA_67 = *PIA;
+
+    PIA_f *= 0.9333333333333;
+    int PIA_66 = PIA_f;
+
+    PIA_f *= 0.9333333333333;
+    int PIA_65 = PIA_f;
+
+    PIA_f *= 0.9333333333333;
+    int PIA_64 = PIA_f;
+
+    PIA_f *= 0.9583333333333;
+    int PIA_63 = PIA_f;
+
+    PIA_f *= 0.9583333333333;
+    int PIA_62 = PIA_f;
+
+    PIA_f = *PIA;
+    PIA_f *= 1.08;
+    int PIA_68 = PIA_f;
+    PIA_f *= 1.08;
+    int PIA_69 = PIA_f;
+    PIA_f *= 1.08;
+    int PIA_70 = PIA_f;
+
+    printf("PIA Age 62 = $%d\n", PIA_62);
+    printf("PIA Age 63 = $%d\n", PIA_63);
+    printf("PIA Age 64 = $%d\n", PIA_64);
+    printf("PIA Age 65 = $%d\n", PIA_65);
+    printf("PIA Age 66 = $%d\n", PIA_66);
+    printf("PIA Age 67 = $%d\n", PIA_67);
+    printf("PIA Age 68 = $%d\n", PIA_68);
+    printf("PIA Age 69 = $%d\n", PIA_69);
+    printf("PIA Age 70 = $%d\n", PIA_70);
+  }
+
   return retcode;
 }
 
