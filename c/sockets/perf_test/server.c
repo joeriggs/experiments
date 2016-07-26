@@ -41,8 +41,10 @@ int main(int argc, char **argv)
     if(ret != strlen(write_msg)) break;
 
     char read_buf[1024];
+    memset(read_buf, 0, sizeof(read_buf));
     ret = recv(accept_sock, read_buf, sizeof(read_buf), 0);
-    printf("recv() returned %d.\n", ret);
+    char *result = ((ret == strlen(write_msg)) && (strcmp(write_msg, read_buf) == 0)) ? "PASS" : "FAIL";
+    printf("recv() returned %d (%s) (%s).\n", ret, read_buf, result);
     if(ret <= 0) break;
   }
 

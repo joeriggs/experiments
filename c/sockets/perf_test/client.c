@@ -21,13 +21,15 @@ int main(int argc, char **argv)
   printf("connect() returned %d (%s).\n", ret, (ret == 0) ? "PASS": "FAIL");
   if(ret != 0) { printf("%s\n", strerror(errno)); return retval; }
 
+  char read_buf[1024];
+  memset(read_buf, 0, sizeof(read_buf));
+
   int i = 0;
   while(1) {
     printf("%8d\n", i++);
 
-    char read_buf[1024];
     ret = recv(sock, read_buf, sizeof(read_buf), 0);
-    printf("recv() returned %d (%s).\n", ret, (ret >= 0) ? "PASS" : "FAIL");
+    printf("recv() returned %d (%s) (%s).\n", ret, read_buf, (ret >= 0) ? "PASS" : "FAIL");
     if(ret <= 0) break;
 
     ret = send(sock, read_buf, strlen(read_buf), 0);
