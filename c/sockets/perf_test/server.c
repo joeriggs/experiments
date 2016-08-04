@@ -31,11 +31,13 @@ int main(int argc, char **argv)
   if(accept_sock == -1) return retval;
 
   int i;
-  for(i = 0; i < 100000; i++) {
+  for(i = 0; i < 10000; i++) {
     printf("%8d\n", i);
 
-    const char *write_msg = "This is a message from the socket_server.";
+    const char *const_msg = "This is a message.";
+    char write_msg[1024];
 
+    sprintf(write_msg, "%7d: %s", i, const_msg);
     ret = send(accept_sock, write_msg, strlen(write_msg), 0);
     printf("send() returned %d (%s).\n", ret, (ret == strlen(write_msg)) ? "PASS": "FAIL");
     if(ret != strlen(write_msg)) break;
