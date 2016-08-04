@@ -370,6 +370,7 @@ calc_indexing_factor(int dob,
   int age_60 = dob + 60;
   if(year >= age_60) {
     indexing_factor = 1.0;
+    printf("%s(): dob %d : year %d : age_60 %d.\n", __func__, dob, year, age_60);
   }
 
   /* If the person is less than age 60, calculate their indexing factor. */
@@ -377,6 +378,7 @@ calc_indexing_factor(int dob,
     float awi_60 = average_wage_index_get(age_60);
     float awi    = average_wage_index_get(year);
     indexing_factor = awi_60 / awi;
+    printf("%s(): dob %d : year %d : awi_60 %f : awi %f : indexing_factor %f\n", __func__, dob, year, awi_60, awi, indexing_factor);
   }
 
   return indexing_factor;
@@ -405,16 +407,19 @@ int ssa_add_wage(int dob,
    * wage down to the maximum allowed amount for that year. */
   int maximum_earnings = maximum_earnings_get(year);
   int allowed_wage = min(wage, maximum_earnings);
-  //printf("allowed_wage for %d is %d.\n", year, allowed_wage);
 
   float indexing_factor = calc_indexing_factor(dob, year);
   int indexed_earnings = allowed_wage * indexing_factor;
+
+  printf("%s(): year %d : maximum_earnings %d : allowed_wage %d.\n", __func__, year, maximum_earnings, allowed_wage);
+  printf("%s(): indexing_factor %f : indexed_earnings %d\n", __func__, indexing_factor, indexed_earnings);
 
   /* Do we need to round indexed_earnings up? */
   float ie = allowed_wage * indexing_factor;
   float a = indexed_earnings;
   a += 0.5;
   if(ie >= a) {
+    printf("%s(): Bumping indexed_earnings.\n", __func__);
     indexed_earnings++;
   }
 
@@ -435,6 +440,7 @@ int ssa_add_wage(int dob,
     }
   }
 
+  printf("%s(): year %4d : wage %9d : indexed_earnings %9d.\n", __func__, year, wage, indexed_earnings);
   if(indexed_earnings > highest_indexed_earnings[y]) {
       highest_indexed_earnings[y] = indexed_earnings;
   }
@@ -448,16 +454,16 @@ int ssa_calc_benefit(int dob, int *PIA)
 
   int i;
   for(i = 0; i < TOTAL_HIGHEST_INDEXED_EARNINGS; i++) {
-    //printf("highest_indexed_earnings[%d] = %7d\n", i, highest_indexed_earnings[i]);
+    if(highest_indexed_earnings[i]) { printf("highest_indexed_earnings[%d] = %7d\n", i, highest_indexed_earnings[i]); }
     total_indexed_earnings += highest_indexed_earnings[i];
   }
   AIME = total_indexed_earnings / (TOTAL_HIGHEST_INDEXED_EARNINGS * 12);
-  //printf("total_indexed_earnings = %8d.  AIME = %6d.\n", total_indexed_earnings, AIME);
+  printf("total_indexed_earnings = %8d.  AIME = %6d.\n", total_indexed_earnings, AIME);
 
   int bend1 = 0;
   int bend2 = 0;
   bend_points_get(dob, &bend1, &bend2);
-  //printf("bend1 = %d.  bend2 = %d.\n", bend1, bend2);
+  printf("bend1 = %d.  bend2 = %d.\n", bend1, bend2);
 
   /* Calculate the Primary Insurance Amount (PIA) (i.e. the Social Security benefit. */
   int temp_AIME = AIME;
@@ -465,23 +471,24 @@ int ssa_calc_benefit(int dob, int *PIA)
   int bend1_amt = min(bend1, temp_AIME);
   float bend1_benefit_float = bend1_amt * 0.90;
   int bend1_benefit = bend1_benefit_float;
-  //printf("bend1_amt = %d.  bend1_benefit =  %d.\n", bend1_amt, bend1_benefit);
+  printf("bend1_amt = %d.  bend1_benefit =  %d.\n", bend1_amt, bend1_benefit);
   temp_AIME -= bend1_amt;
 
   int bend2_amt = min((bend2 - bend1), temp_AIME);
   float bend2_benefit_float = bend2_amt * 0.32;
   int bend2_benefit = bend2_benefit_float;
-  //printf("bend2_amt = %d.  bend2_benefit =  %d.\n", bend2_amt, bend2_benefit);
+  printf("bend2_amt = %d.  bend2_benefit =  %d.\n", bend2_amt, bend2_benefit);
   temp_AIME -= bend2_amt;
 
   int more_amt = temp_AIME;
   float more_benefit_float = 0.15 * more_amt;
   int more_benefit = more_benefit_float;
-  //printf("more_amt = %d.  more_benefit = %d.\n", more_amt, more_benefit);
+  printf("more_amt = %d.  more_benefit = %d.\n", more_amt, more_benefit);
 
   *PIA = bend1_benefit + bend2_benefit + more_benefit;
-  //printf("PIA %d.\n", *PIA);
+  printf("PIA %d.\n", *PIA);
 
+#if 0
   {
     /* For illustrative purposes only, show the PIA for different ages (early
      * and late retirement ages).  This data assumes the person has a full
@@ -539,6 +546,7 @@ int ssa_calc_benefit(int dob, int *PIA)
     printf("PIA Age 69 = $%d\n", PIA_69);
     printf("PIA Age 70 = $%d\n", PIA_70);
   }
+#endif
 
   return retcode;
 }
