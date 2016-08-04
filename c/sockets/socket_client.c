@@ -17,8 +17,8 @@ int main(int argc, char **argv)
 
     struct sockaddr_in connect_info;
     connect_info.sin_family = AF_INET;
-    connect_info.sin_port   = htons(32772);
-    inet_aton("172.17.8.101", &connect_info.sin_addr);
+    connect_info.sin_port   = htons(50000);
+    inet_aton("192.168.1.184", &connect_info.sin_addr);
     ret = connect(sock, (struct sockaddr *) &connect_info, sizeof(connect_info));
     printf("connect() returned %d (%s).\n", ret, (ret == 0) ? "PASS": "FAIL");
     if(ret != 0) { printf("%s\n", strerror(errno)); break; }

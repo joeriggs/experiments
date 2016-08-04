@@ -95,7 +95,7 @@ int main(int argc, char **argv)
     /* Use the first IP Address. */
     struct sockaddr_in *sin = (struct sockaddr_in *) info->ai_addr;
     //inet_aton("172.17.8.100", &sin->sin_addr);
-    sin->sin_port = htons(1234);
+    sin->sin_port = htons(50000);
 
     ret = bind(sock, (struct sockaddr *) sin, sizeof(*sin));
     printf("bind() returned %d (%s).\n", ret, (ret == 0) ? "PASS": "FAIL");
@@ -135,7 +135,7 @@ int main(int argc, char **argv)
       struct sockaddr_in sin;
       sin.sin_family = AF_INET;
       sin.sin_addr = s_in->sin_addr;
-      sin.sin_port = (pid == 0) ? htons(1234) : htons(1235);
+      sin.sin_port = (pid == 0) ? htons(50000) : htons(50001);
       ret = bind(sock, (struct sockaddr *) &sin, sizeof(sin));
       printf("bind(%d) returned %d (%s).\n", ntohs(sin.sin_port), ret, (ret == 0) ? "PASS": "FAIL");
     }
