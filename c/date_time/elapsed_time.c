@@ -57,7 +57,7 @@ do_some_work(int64_t p)
 int main(int argc, char **argv)
 {
 	int64_t p;
-	for(p = 1; p < 100000000; p *= 11) {
+	for(p = 1; p < 1000000000000ll; p *= 11) {
 		/* Get a starting timestamp. */
 		struct timeval bef;
 		gettimeofday(&bef, 0);
@@ -68,7 +68,7 @@ int main(int argc, char **argv)
 		struct timeval aft;
 		gettimeofday(&aft, 0);
 
-		printf("%s seconds: %9jd %s prime.\n",
+		printf("%s seconds: %12jd %s prime.\n",
 		        calc_elapsed_time(&bef, &aft), p,
 		        (res == 0) ? "is" : "is not");
 	}
