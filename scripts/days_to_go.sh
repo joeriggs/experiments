@@ -6,7 +6,8 @@
 ###############################################################################
 
 ########################################
-# TARGET_DATE[] contains the dates we're counting down to.
+# TARGET_BEG[] contains the starting dates we're counting down from (TARGET_DISP = P).
+# TARGET_END[] contains the end dates we're counting down to.
 # TARGET_DISP[] contains the counting scale:
 #   Y = Years.
 #   W = Weeks.
@@ -14,13 +15,18 @@
 #   H = Hours.
 #   A = Auto-pick the best scale (Y -> W -> D -> H -> M -> S).
 #   C = Clock (DDDDD:HH:MM:SS).
+#   P = Percentage from start to finish.
 ########################################
-TARGET_DATE[0]="2015-12-31 23:59:59"; TARGET_DISP[0]="C"
-TARGET_DATE[1]="2016-02-17 23:39:00"; TARGET_DISP[1]="A"
-TARGET_DATE[2]="2016-03-15 18:22:00"; TARGET_DISP[2]="A"
-TARGET_DATE[3]="2016-12-31 23:59:59"; TARGET_DISP[3]="D"
-TARGET_DATE[4]="2016-12-31 23:59:59"; TARGET_DISP[4]="W"
-TARGET_DATE_COUNT=${#TARGET_DATE[@]}
+TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2016-09-02 21:59:00"; TARGET_DISP[${#TARGET_DISP[@]}]="C"
+TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2016-09-24 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="C"
+TARGET_BEG[${#TARGET_BEG[@]}]="2015-04-04 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2016-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
+TARGET_BEG[${#TARGET_BEG[@]}]="2016-04-04 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2017-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
+TARGET_BEG[${#TARGET_BEG[@]}]="2017-04-04 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2018-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
+TARGET_BEG[${#TARGET_BEG[@]}]="2017-01-26 21:15:00"; TARGET_END[${#TARGET_END[@]}]="2017-01-26 21:20:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
+TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2017-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="W"
+TARGET_END_COUNT=${#TARGET_END[@]}
+
+echo ${TARGET_END}
 
 ########################################
 # Constants.  DO NOT MODIFY.
@@ -58,33 +64,45 @@ function date_to_seconds() {
 ###############################################################################
 ###############################################################################
 
-TARGET_DATE_INDEX=0
+TARGET_END_INDEX=0
 printf "Counting down to:\n"
-while [ ${TARGET_DATE_INDEX} -lt ${TARGET_DATE_COUNT} ]; do
-  printf "  %s\n" "${TARGET_DATE[${TARGET_DATE_INDEX}]}"
-  TARGET_DATE_INDEX=`expr ${TARGET_DATE_INDEX} + 1`
+while [ ${TARGET_END_INDEX} -lt ${TARGET_END_COUNT} ]; do
+  printf "  %s\n" "${TARGET_END[${TARGET_END_INDEX}]}"
+  TARGET_END_INDEX=`expr ${TARGET_END_INDEX} + 1`
 done
 printf "Press <Enter> to continue.  Press <Ctrl-C> to quit. "
 read
 
 ########################################
 # Print a header.
-TARGET_DATE_INDEX=0
+TARGET_BEG_INDEX=0
 printf " | "
-while [ ${TARGET_DATE_INDEX} -lt ${TARGET_DATE_COUNT} ]; do
-  printf "   %s | " "${TARGET_DATE[${TARGET_DATE_INDEX}]}"
-  TARGET_DATE_INDEX=`expr ${TARGET_DATE_INDEX} + 1`
+while [ ${TARGET_BEG_INDEX} -lt ${TARGET_END_COUNT} ]; do
+  TARGET_BEG_STRING="${TARGET_BEG[${TARGET_BEG_INDEX}]}"
+  [ -z "${TARGET_BEG_STRING}" ] && TARGET_BEG_STRING="                   "
+  printf "   %s | " "${TARGET_BEG_STRING}"
+  TARGET_BEG_INDEX=`expr ${TARGET_BEG_INDEX} + 1`
+done
+printf "                    |\n"
+
+TARGET_END_INDEX=0
+printf " | "
+while [ ${TARGET_END_INDEX} -lt ${TARGET_END_COUNT} ]; do
+  printf "   %s | " "${TARGET_END[${TARGET_END_INDEX}]}"
+  TARGET_END_INDEX=`expr ${TARGET_END_INDEX} + 1`
 done
 printf "======= NOW ======= |\n"
 
 ########################################
 # Cycle through the list of dates and convert them to seconds.  The number of
 # seconds will never change, so we'll only calculate them once.
-TARGET_DATE_INDEX=0
-while [ ${TARGET_DATE_INDEX} -lt ${TARGET_DATE_COUNT} ]; do
-  date_to_seconds "${TARGET_DATE[${TARGET_DATE_INDEX}]}"
-  TARG_SECS[${TARGET_DATE_INDEX}]=${CALCULATED_SECONDS}
-  TARGET_DATE_INDEX=`expr ${TARGET_DATE_INDEX} + 1`
+TARGET_END_INDEX=0
+while [ ${TARGET_END_INDEX} -lt ${TARGET_END_COUNT} ]; do
+  date_to_seconds "${TARGET_BEG[${TARGET_END_INDEX}]}"
+  TARG_BEG_SECS[${TARGET_END_INDEX}]=${CALCULATED_SECONDS}
+  date_to_seconds "${TARGET_END[${TARGET_END_INDEX}]}"
+  TARG_END_SECS[${TARGET_END_INDEX}]=${CALCULATED_SECONDS}
+  TARGET_END_INDEX=`expr ${TARGET_END_INDEX} + 1`
 done
 
 ########################################
@@ -96,11 +114,11 @@ while [ 1 ]; do
   date_to_seconds "${NOW}"
   CURR_SECS=${CALCULATED_SECONDS}
 
-  TARGET_DATE_INDEX=0
-  while [ ${TARGET_DATE_INDEX} -lt ${TARGET_DATE_COUNT} ]; do
-    DIFF=`expr ${TARG_SECS[${TARGET_DATE_INDEX}]} - ${CURR_SECS}`
+  TARGET_END_INDEX=0
+  while [ ${TARGET_END_INDEX} -lt ${TARGET_END_COUNT} ]; do
+    DIFF=`expr ${TARG_END_SECS[${TARGET_END_INDEX}]} - ${CURR_SECS}`
 
-    case ${TARGET_DISP[${TARGET_DATE_INDEX}]} in
+    case ${TARGET_DISP[${TARGET_END_INDEX}]} in
 
     "Y")
       UNIT_NAME="YEARS"
@@ -193,6 +211,21 @@ while [ 1 ]; do
       fi
       ;;
 
+    "P")
+      BEG_SECS=${TARG_BEG_SECS[${TARGET_END_INDEX}]}
+      END_SECS=${TARG_END_SECS[${TARGET_END_INDEX}]}
+      if [ ${CURR_SECS} -gt ${BEG_SECS} ] && [ ${CURR_SECS} -lt ${END_SECS} ]; then
+        UNIT_NAME="%"
+        TOT_SECS=`expr ${END_SECS} - ${BEG_SECS}`
+        ELAPSED_SECS=`expr ${CURR_SECS} - ${BEG_SECS}`
+        FRACTION=$(echo "scale=10; ( ${ELAPSED_SECS} / ${TOT_SECS} ) * 100" | bc -l)
+        PRINTF_VAL=${FRACTION}
+        PRINTF_FMT="%19.5f %s"
+      else
+        FRACTION=-1
+      fi
+      ;;
+
     *)
       echo "ERROR"
       exit 1
@@ -207,7 +240,7 @@ while [ 1 ]; do
       printf " |  ${PRINTF_FMT}" ${PRINTF_VAL} "${UNIT_NAME}"
     fi
 
-    TARGET_DATE_INDEX=`expr ${TARGET_DATE_INDEX} + 1`
+    TARGET_END_INDEX=`expr ${TARGET_END_INDEX} + 1`
   done
   printf " | %s |\r" "${NOW}"
 done
