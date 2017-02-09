@@ -17,13 +17,14 @@
 #   C = Clock (DDDDD:HH:MM:SS).
 #   P = Percentage from start to finish.
 ########################################
-TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2016-09-02 21:59:00"; TARGET_DISP[${#TARGET_DISP[@]}]="C"
-TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2016-09-24 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="C"
-TARGET_BEG[${#TARGET_BEG[@]}]="2015-04-04 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2016-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
-TARGET_BEG[${#TARGET_BEG[@]}]="2016-04-04 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2017-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
-TARGET_BEG[${#TARGET_BEG[@]}]="2017-04-04 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2018-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
-TARGET_BEG[${#TARGET_BEG[@]}]="2017-01-26 21:15:00"; TARGET_END[${#TARGET_END[@]}]="2017-01-26 21:20:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
+TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2017-02-18 10:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="D"
+TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2017-03-01 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="D"
 TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2017-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="W"
+TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2017-05-17 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="C"
+TARGET_BEG[${#TARGET_BEG[@]}]="2017-01-01 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2018-01-01 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
+TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2020-01-01 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="W"
+TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2020-01-01 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="D"
+TARGET_BEG[${#TARGET_BEG[@]}]="2017-01-01 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2020-01-01 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
 TARGET_END_COUNT=${#TARGET_END[@]}
 
 echo ${TARGET_END}
@@ -214,15 +215,20 @@ while [ 1 ]; do
     "P")
       BEG_SECS=${TARG_BEG_SECS[${TARGET_END_INDEX}]}
       END_SECS=${TARG_END_SECS[${TARGET_END_INDEX}]}
-      if [ ${CURR_SECS} -gt ${BEG_SECS} ] && [ ${CURR_SECS} -lt ${END_SECS} ]; then
+      if [ ${CURR_SECS} -lt ${BEG_SECS} ]; then
+        FRACTION=0
+        UNIT_NAME=" "
+        PRINTF_VAL="BEFORE"
+        PRINTF_FMT="             %s %s"
+      elif [ ${CURR_SECS} -gt ${END_SECS} ]; then
+        FRACTION=-1
+      else
         UNIT_NAME="%"
         TOT_SECS=`expr ${END_SECS} - ${BEG_SECS}`
         ELAPSED_SECS=`expr ${CURR_SECS} - ${BEG_SECS}`
         FRACTION=$(echo "scale=10; ( ${ELAPSED_SECS} / ${TOT_SECS} ) * 100" | bc -l)
         PRINTF_VAL=${FRACTION}
-        PRINTF_FMT="%19.5f %s"
-      else
-        FRACTION=-1
+        PRINTF_FMT="%19.9f %s"
       fi
       ;;
 
