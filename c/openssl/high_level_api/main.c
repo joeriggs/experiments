@@ -2,8 +2,8 @@
 #include <stdio.h>
 #include <string.h>
 
-#include <openssl/aes.h>
 #include <openssl/sha.h>
+#include <openssl/evp.h>
 
 static unsigned char rawKey[32] = {
    0x6D, 0x22, 0xCD, 0x59, 0x3B, 0x2A, 0x34, 0xBB, 0x74, 0x7A, 0x6B, 0x26, 0xC7, 0x27, 0x05, 0x3A,
@@ -36,22 +36,24 @@ static void logData(unsigned char *p, size_t pLen, const char *func, const char 
 }
 
 static unsigned char myESSIV[16];
-static void createESSIV(void)
-{
-	AES_KEY encKey;
-	int rc;
-	rc = AES_set_encrypt_key(rawKey, sizeof(rawKey) * 8, &encKey);
-	if(rc != 0) {
-		printf("AES_set_encrypt_key() failed\n");
-	}
-
+static void createESSIV(void) {
 	unsigned char md[SHA_DIGEST_LENGTH];
 	SHA1(rawKey, sizeof(rawKey), md);
 	//logData(md, sizeof(md), __func__, "md");
 
-	unsigned char myESSIV[16];
-	AES_ecb_encrypt(md, myESSIV, &encKey, AES_ENCRYPT);
-	logData(myESSIV, sizeof(myESSIV), __func__, "myESSIV");
+	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+
+	int rc = EVP_EncryptInit_ex(ctx, EVP_aes_256_ecb(), NULL, rawKey, NULL);
+	//printf("EVP_EncryptInit_ex() returned %d.\n", rc);
+
+	int len = 0;
+	rc = EVP_EncryptUpdate(ctx, myESSIV, &len, md, sizeof(md));
+	//printf("EVP_EncryptUpdate() returned %d.\n", rc);
+	int outputLen = len;
+
+	rc = EVP_EncryptFinal_ex(ctx, myESSIV + len, &len);
+	//printf("EVP_EncryptFinal_ex() returned %d.\n", rc);
+	//logData(myESSIV, sizeof(myESSIV), __func__, "myESSIV");
 }
 
 int main(int argc, char **arg)
@@ -62,29 +64,20 @@ int main(int argc, char **arg)
 
 	createESSIV();
 
-	// Make the keys.
+	EVP_CIPHER_CTX *ctx = EVP_CIPHER_CTX_new();
+
 	int rc;
+	rc = EVP_DecryptInit_ex(ctx, EVP_aes_256_ofb(), NULL, rawKey, ofbIVmod);
+	printf("EVP_DecryptInit_ex() returned %d.\n", rc);
 
-#if 0
-	AES_KEY decKey;
-	rc = AES_set_decrypt_key(rawKey, sizeof(rawKey) * 8, &decKey);
-	if(rc != 0) {
-		printf("AES_set_decrypt_key() failed\n");
-	}
-	//logData((unsigned char *) &decKey, sizeof(decKey), __func__, "decKey");
+	int len = 0;
+	EVP_DecryptUpdate(ctx, output, &len, cipherText, sizeof(cipherText));
+	printf("EVP_DecryptUpdate() returned %d.  len %d.\n", rc, len);
+	int outputLen = len;
 
-	AES_cbc_encrypt(cipherText, output, 0, &decKey, myESSIV, AES_DECRYPT);
-#endif
-
-	AES_KEY encKey;
-	rc = AES_set_encrypt_key(rawKey, sizeof(rawKey) * 8, &encKey);
-	if(rc != 0) {
-		printf("AES_set_encrypt_key() failed\n");
-	}
-	//logData((unsigned char *) &encKey, sizeof(encKey), __func__, "encKey");
-
-	int num = 0;
-	AES_ofb128_encrypt(cipherText, output, 10, &encKey, ofbIVmod, &num);
+	EVP_DecryptFinal_ex(ctx, output + len, &len);
+	printf("EVP_DecryptFinal_ex() returned %d.  len %d.\n", rc, len);
+	outputLen += len;
 	logData(output, 10, __func__, "output");
 
 	retcode = memcmp(clearText, output, sizeof(clearText));
