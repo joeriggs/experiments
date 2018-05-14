@@ -56,20 +56,23 @@ int main(int argc, char **argv)
 	switch(pid) {
 	case 0:
 	{
-		int childPID = getpid();
+		int myPID = getpid();
+		int parentPID = getppid();
 
-		/* This is the child.  Spin real slowly,
-		 * watching the shared memory space. */
-		while(m[100] != 0xFF)
+		/* This is the child.  Spin & and update the memory space. */
+		int i;
+		for(i = 0; i < 0x100; i++)
 		{
-			sem_wait(sem);
-			printf("Child (%d): Woke up from semaphore.\n", childPID);
+			printf("Child (PID %d) writing %x to parent PID %d.\n", myPID, i, parentPID);
 
-			printf("Child (%d): new value (%x %x %x).\n",
-			        childPID, m[100], m[1000], m[1000000]);
+			m[    100] = i;
+			m[   1000] = i + 1;
+			m[1000000] = i + 2;
+			sem_post(sem);
+			sleep(1);
 		}
-		break;
 	}
+	break;
 
 	case -1: // An error occurred.
 		printf("fork() failed.  Returned %d (%s).\n", errno, strerror(errno));
@@ -77,20 +80,22 @@ int main(int argc, char **argv)
 
 	default:
 	{
-		/* This is the parent.  Spin real slowly * and update the memory space. */
-		int i;
-		for(i = 0; i < 0x100; i++)
-		{
-			printf("Parent writing %x.\n", i);
+		int myPID = getpid();
+		int childPID = pid;
 
-			m[    100] = i;
-			m[   1000] = i;
-			m[1000000] = i;
-			sem_post(sem);
-			sleep(1);
+		/* This is the parent.  Spin real slowly,
+		 * watching the shared memory space. */
+		while(m[100] != 0xFF)
+		{
+			int sem_wait_rc = sem_wait(sem);
+			printf("Parent (%d): sem_wait(%p) returned %d.\n", myPID, sem, sem_wait_rc);
+
+			printf("Parent (%d): new values (%x %x %x) from child %d.\n",
+			        myPID, m[100], m[1000], m[1000000], childPID);
 		}
-		break;
 	}
+	break;
+
 	}
 
 	retval = munmap(m, SHM_FORK_SIZE);

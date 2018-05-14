@@ -3,6 +3,7 @@
  * This program will allow you to play around with fork()/exec().
  *****************************************************************************/
 
+#include <errno.h>
 #include <signal.h>
 #include <stdio.h>
 #include <unistd.h>
@@ -31,10 +32,15 @@ fork_exec(void)
 
 /* The signal handler. */
 static void
-my_sig_handler(int sig)
+my_sig_handler(int sig, siginfo_t *info, void *ctx)
 {
   terminates++;
-  printf("Got signal %s.  Total of %d signals.\n", (sig == SIGCHLD) ? "SIGCHLD" : "???", terminates);
+
+  int childStatus;
+  waitpid(info->si_pid, &childStatus, 0);
+
+  printf("Got signal %s from %d (UID %d).  Status %d.  Total of %d signals.\n",
+          (sig == SIGCHLD) ? "SIGCHLD" : "???", info->si_pid, info->si_uid, childStatus, terminates);
   if(starts < TOTAL_CHILD_PROCESSES)
   {
     fork_exec();
@@ -49,10 +55,16 @@ int main(int argc, char **argv)
 
   /* Set up a signal handler.  It'll get called when one of our children
    * terminates. */
-  __sighandler_t sig_h = signal(SIGCHLD, my_sig_handler);
-  if(sig_h == SIG_ERR)
+  struct sigaction oldSA;
+  struct sigaction newSA = {
+    .sa_sigaction = my_sig_handler,
+    .sa_mask = 0,
+    .sa_flags = SA_SIGINFO,
+  };
+  int sigactionRC = sigaction(SIGCHLD, &newSA, &oldSA);
+  if(sigactionRC == -1)
   {
-    printf("Unable to set signal handler.\n");
+    printf("Unable to set signal handler (%s).\n", strerror(errno));
   }
 
   else
