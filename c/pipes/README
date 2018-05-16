@@ -1,0 +1,7 @@
+This is a client/server app.
+
+Build the 2 pieces with build.sh
+
+Run "./client" in one shell.
+Run "./server" in another shell.
+
