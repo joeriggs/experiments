@@ -1,5 +1,8 @@
+*.o
+
 shm_client
 shm_server
 shm_fork
+shm_fork_mutex
 shm_fork_rwlock
 shm_fork_semaphore

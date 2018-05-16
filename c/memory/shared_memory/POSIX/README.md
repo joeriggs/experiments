@@ -11,7 +11,11 @@ parent/child relationship.  It calls fork() to create a child, and then the pare
 and child communicate via the shared memory space while using a semaphore as a
 synchronization mechanism.
 
-* shm_fork_rwlock is very similar to shm_fork_semaphore, except it uses a shared
-read-write lock to communicate between parent (write lock) and children (read
-locks).
+* shm_fork_mutex is very similar to shm_fork_semaphore, except it uses a shared
+mutex to coordinate data access between parent and children.
+
+* shm_fork_rwlock is also similar to shm_fork_semaphore, except it uses a shared
+read-write lock to coordinate data updates (write lock) and reading (read lock)
+between parent (write lock) and children (read locks).  The parent writes to the
+shared memory space, and the children read from it.
 

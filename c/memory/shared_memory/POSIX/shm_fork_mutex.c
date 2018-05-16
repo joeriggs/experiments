@@ -1,9 +1,8 @@
 
 /*******************************************************************************
  * This program will create a shared memory space that is shared between a
- * parent and several child process.  It then uses a rwlock to control access
- * to the shared memory space.  The parent has write access to the shared
- * memory, and the children can only read.
+ * parent and several child process.  It then uses a mutex to control access
+ * to the shared memory space.
  ******************************************************************************/
 
 #include <pthread.h>
@@ -15,9 +14,9 @@
  * all processes (parent and children). */
 static unsigned char *m = NULL;
 
-/* This will eventually point to a read-write lock that is stored in the shared
- * memory space.  It is used to control access to the shared memory space. */
-static pthread_rwlock_t *rwlock = NULL;
+/* This will eventually point to a mutex that is stored in the shared memory
+ * space.  It is used to control access to the shared memory space. */
+static pthread_mutex_t *mutex = NULL;
 
 static void doFork(void)
 {
@@ -31,19 +30,20 @@ static void doFork(void)
 		/* This is a child.  Spin and read the memory space. */
 		while(m[100] < 0xFF)
 		{
-			/* Grab a read lock.  If the parent has it locked, we'll
-			 * block until it releases. */
-			printf("%4d: Child (PID %d): Waiting for rdlock.\n", ++loopCount, myPID);
-			pthread_rwlock_rdlock(rwlock);
-			printf("%4d: Child (PID %d): Got the rdlock.\n", loopCount, myPID);
+			/* Grab the mutex. */
+			printf("%4d: Child (PID %d): Waiting for mutex.\n", ++loopCount, myPID);
+			pthread_mutex_lock(mutex);
+			printf("%4d: Child (PID %d): Got the mutex.\n", loopCount, myPID);
 
 			printf("%4d: Child (PID %d): Current values (%02X %02X %02X).\n", loopCount,
 			        myPID, m[100], m[1000], m[1000000]);
+			usleep(100000);
 
-			printf("%4d: Child (PID %d): Releasing the rdlock.\n", loopCount, myPID);
-			pthread_rwlock_unlock(rwlock);
-			printf("%4d: Child (PID %d): Released the rdlock.\n", loopCount, myPID);
-			usleep(200000);
+			printf("%4d: Child (PID %d): Releasing the mutex.\n", loopCount, myPID);
+			pthread_mutex_unlock(mutex);
+			printf("%4d: Child (PID %d): Released the mutex.\n", loopCount, myPID);
+
+			sched_yield();
 		}
 
 		printf("Child (PID %d): Exiting.\n", myPID);
@@ -66,7 +66,7 @@ int main(int argc, char **argv)
 {
 	int retval;
 
-	printf("SHM Parent/Children rwlock example.\n");
+	printf("SHM Parent/Children mutex example.\n");
 
 	int myPID = getpid();
 
@@ -99,48 +99,47 @@ int main(int argc, char **argv)
 
 	memset(m, 0, SHM_FORK_SIZE);
 
-	/* Create a rwlock at offset[0] in the shared mem space. */
-	rwlock = (pthread_rwlock_t *) m;
-	pthread_rwlockattr_t attr;
-	pthread_rwlockattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
-	if(pthread_rwlock_init(rwlock, &attr) == -1) {
-		printf("pthread_rwlock_init() failed (%s).\n", strerror(errno));
+	/* Create a mutex at offset[0] in the shared mem space. */
+	mutex = (pthread_mutex_t *) m;
+	pthread_mutexattr_t attr;
+	pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED);
+	if(pthread_mutex_init(mutex, &attr) == -1) {
+		printf("pthread_mutex_init() failed (%s).\n", strerror(errno));
 		return 1;
 	}
-	printf("pthread_rwlock_init() succeeded.\n");
+	printf("pthread_mutex_init() succeeded.\n");
 
 	/* Create a child.  Feel free to call this function more than once in
 	 * order to create multiple children. */
 	doFork();
-	doFork();
-	doFork();
 
 	/* The parent returns to this location. Spin and occasionally update the
-	 * memory space.  We do the updates VERY SLOWLY, so that the user can
+	 * memory space.  We do the updates slowly, so that the user can
 	 * observe the child processes being blocked during the updates.  We
-	 * hold the lock for 500ms, and then we release it for 500ms.
+	 * hold the lock for 100ms, and then we release it for 100ms.
 	 */
 	int i;
 	for(i = 0; i < 0x102; i++) {
 
-		printf("Parent (PID %d): Waiting for wrlock.\n", myPID);
-		pthread_rwlock_wrlock(rwlock);
-		printf("Parent (PID %d): Got the wrlock.\n", myPID);
+		printf("Parent (PID %d): Waiting for mutex.\n", myPID);
+		pthread_mutex_lock(mutex);
+		printf("Parent (PID %d): Got the mutex.\n", myPID);
 
 		printf("Parent (PID %d): Writing %02X to shared memory.\n", myPID, i);
 		m[    100] = i;
 		m[   1000] = i + 1;
 		m[1000000] = i + 2;
-		usleep(500000);
+		usleep(100000);
 
-		printf("Parent (PID %d): Releasing for wrlock.\n", myPID);
-		pthread_rwlock_unlock(rwlock);
-		printf("Parent (PID %d): Released wrlock.\n", myPID);
-		usleep(500000);
+		printf("Parent (PID %d): Releasing for mutex.\n", myPID);
+		pthread_mutex_unlock(mutex);
+		printf("Parent (PID %d): Released mutex.\n", myPID);
+
+		sched_yield();
 	}
 
-	retval = pthread_rwlock_destroy(rwlock);
-	printf("pthread_rwlock_destroy() returned %d (%s).\n", retval, (retval == 0) ? "PASS" : "FAIL");
+	retval = pthread_mutex_destroy(mutex);
+	printf("pthread_mutex_destroy() returned %d (%s).\n", retval, (retval == 0) ? "PASS" : "FAIL");
 
 	retval = munmap(m, SHM_FORK_SIZE);
 	printf("unmap() returned %d (%s).\n", retval, (retval == 0) ? "PASS" : "FAIL");
