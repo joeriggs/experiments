@@ -9,7 +9,8 @@ Then it starts writing to that shared memory space.
 shm_client watches the same shared memory space and reports whenever it sees
 the data change.
 
-shm_fork is similar to shm_server and shm_client, except it works in a parent/
-child relationship.  It calls fork() to create a child, and then the parent
-and child communicate via the shared memory space.
+shm_fork_semaphore is similar to shm_server and shm_client, except it works in a
+parent/child relationship.  It calls fork() to create a child, and then the parent
+and child communicate via the shared memory space while using a semaphore as a
+synchronization mechanism.
 
