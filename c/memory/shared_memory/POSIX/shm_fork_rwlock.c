@@ -7,6 +7,7 @@
  ******************************************************************************/
 
 #include <pthread.h>
+#include <stdlib.h>
 
 #include "shm_test.h"
 
@@ -28,7 +29,7 @@ static void doFork(void)
 		int loopCount = 0;
 
 		/* This is a child.  Spin and read the memory space. */
-		while(m[100] != 0xFF)
+		while(m[100] < 0xFF)
 		{
 			/* Grab a read lock.  If the parent has it locked, we'll
 			 * block until it releases. */
@@ -42,8 +43,11 @@ static void doFork(void)
 			printf("%4d: Child (PID %d): Releasing the rdlock.\n", loopCount, myPID);
 			pthread_rwlock_unlock(rwlock);
 			printf("%4d: Child (PID %d): Released the rdlock.\n", loopCount, myPID);
-			usleep(100000);
+			usleep(200000);
 		}
+
+		printf("Child (PID %d): Exiting.\n", myPID);
+		exit(0);
 	}
 		break;
 
@@ -114,10 +118,10 @@ int main(int argc, char **argv)
 	/* The parent returns to this location. Spin and occasionally update the
 	 * memory space.  We do the updates VERY SLOWLY, so that the user can
 	 * observe the child processes being blocked during the updates.  We
-	 * hold the lock for 1 second, and then we release it for 1 second.
+	 * hold the lock for 500ms, and then we release it for 500ms.
 	 */
 	int i;
-	for(i = 0; i < 0x100; i++) {
+	for(i = 0; i < 0x102; i++) {
 
 		printf("Parent (PID %d): Waiting for wrlock.\n", myPID);
 		pthread_rwlock_wrlock(rwlock);
@@ -127,13 +131,16 @@ int main(int argc, char **argv)
 		m[    100] = i;
 		m[   1000] = i + 1;
 		m[1000000] = i + 2;
-		sleep(1);
+		usleep(500000);
 
 		printf("Parent (PID %d): Releasing for wrlock.\n", myPID);
 		pthread_rwlock_unlock(rwlock);
 		printf("Parent (PID %d): Released wrlock.\n", myPID);
-		sleep(1);
+		usleep(500000);
 	}
+
+	retval = pthread_rwlock_destroy(rwlock);
+	printf("pthread_rwlock_destroy() returned %d (%s).\n", retval, (retval == 0) ? "PASS" : "FAIL");
 
 	retval = munmap(m, SHM_FORK_SIZE);
 	printf("unmap() returned %d (%s).\n", retval, (retval == 0) ? "PASS" : "FAIL");
