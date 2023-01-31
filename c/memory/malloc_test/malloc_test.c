@@ -11,6 +11,7 @@
 #define __USE_GNU
 #include <errno.h>
 #include <pthread.h>
+#include <stdint.h>
 #include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
@@ -22,7 +23,7 @@
 static pthread_t thread_objs[CPU_SETSIZE] = { 0 };
 
 /* These are return codes that a thread returns to main(). */
-static int cpu_retcodes[CPU_SETSIZE] = { 0 };
+static uint64_t cpu_retcodes[CPU_SETSIZE] = { 0 };
 
 /* These are the return codes that main() reads from pthread_join(). */
 static int retcodes[CPU_SETSIZE] = { 0 };
@@ -80,7 +81,7 @@ static int perform_test(int cpu)
  *****************************************************************************/
 static void *thread_func(void *arg)
 {
-  int cpu = (int) arg;
+  uint64_t cpu = (uint64_t) arg;
   cpu_set_t set;
   CPU_ZERO(&set);
   CPU_SET(cpu, &set);
@@ -100,12 +101,13 @@ int main(int argc, char **argv)
 {
   int rc;
   printf("Running malloc() test...\n");
+  sleep(30);
 
   cpu_set_t mask;
   sched_getaffinity(0, sizeof(mask), &mask);
 
   /* Loop here and create all of the threads. */
-  int cpu;
+  uint64_t cpu;
   for(cpu = 0; cpu < CPU_SETSIZE; cpu++) {
     if(CPU_ISSET(cpu, &mask)) {
 
@@ -147,6 +149,8 @@ int main(int argc, char **argv)
     }
   }
 
+  printf("Pausing.\n");
+  sleep(10);
   printf("End of test program.\n");
   return 0;
 }

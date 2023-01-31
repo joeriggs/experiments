@@ -1,6 +1,6 @@
 #!/bin/sh
 
-for file in malloc_test.c realloc_test.c proc_status_test.c; do
+for file in huge_malloc.c malloc_test.c realloc_test.c proc_status_test.c; do
 
   echo "Compiling ${file}"
 
