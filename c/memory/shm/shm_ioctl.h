@@ -10,8 +10,9 @@
 #include <sys/types.h>
 
 typedef struct shmIoctlMsg {
+	int msgShmid;
 	sem_t msgSemCmdCmplt;
-	int ioctl;
+	int opcode;
 	int result;
 	size_t msgSize;
 	unsigned char msg[1];
@@ -21,7 +22,12 @@ typedef int shmIoctlMailboxCallback(int ioctl, unsigned char *msg, size_t *msgSi
 
 typedef struct shmIoctlMailbox {
 	int mailboxShmid;
+	key_t mailboxKey;
 	shmIoctlMailboxCallback *cb;
+
+	int doClose;
+	int numThreads;
+	pthread_t *threadIDs;
 
 	pthread_mutex_t msgLock;
 	sem_t msgSemCmdStart;
@@ -31,10 +37,10 @@ typedef struct shmIoctlMailbox {
 extern shmIoctlMailbox *shmIoctlMailboxOpen(const char *path, int owner, int numThreads, shmIoctlMailboxCallback *cb);
 extern void shmIoctlMailboxClose(shmIoctlMailbox *mailbox);
 
-extern shmIoctlMsg *shmIoctlMsgAllocate(key_t msgKey, size_t msgSize, int owner, int *msgShmid);
-extern shmIoctlMsg *shmIoctlMsgRecv(shmIoctlMailbox *mailbox, int *msgShmid, int *clientPID);
-extern int shmIoctlMsgSend(shmIoctlMailbox *mailbox, shmIoctlMsg *msg, int msgShmid);
-extern int shmIoctlMsgReply(shmIoctlMsg *msg, int msgShmid);
-extern void shmIoctlMsgDelete(shmIoctlMsg *msg, int msgShmid);
+extern shmIoctlMsg *shmIoctlMsgAllocate(key_t msgKey, size_t msgSize, int owner);
+extern shmIoctlMsg *shmIoctlMsgRecv(shmIoctlMailbox *mailbox, int *clientPID);
+extern int shmIoctlMsgSend(shmIoctlMailbox *mailbox, shmIoctlMsg *msg);
+extern int shmIoctlMsgReply(shmIoctlMsg *msg);
+extern void shmIoctlMsgDelete(shmIoctlMsg *msg);
 
 #endif // __SHM_IOCTL_H__

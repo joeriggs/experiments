@@ -1,28 +1,8 @@
 
 #include <stdio.h>
+#include <stdlib.h>
 
 #include "shm_ioctl.h"
-
-/* Loop that processes incoming messages to a mailbox.  Each server thread runs
- * this function.
- */
-static void shmIoctlMailboxProcessor(shmIoctlMailbox *mailbox, shmIoctlMailboxCallback *cb)
-{
-	while(1) {
-		// Get the next message from the mailbox.
-		int shmid;
-		int clientPID;
-		shmIoctlMsg *msg = shmIoctlMsgRecv(mailbox, &shmid, &clientPID);
-
-		// Pass the message to the server's callback function.
-		msg->result = (*cb)(msg->ioctl, msg->msg, &msg->msgSize, clientPID);
-
-		// Send the reply back to the client.
-		if (shmIoctlMsgReply(msg, shmid) == -1) {
-			printf("shmIoctlMsgReply(%p, %d) failed.\n", msg, shmid);
-		}
-	}
-}
 
 /* This is a thread function.  The server can request that more than one thread be
  * started.  Each thread runs this function.
@@ -32,7 +12,23 @@ static void *shmIoctlMailboxThreadFunc(void *arg)
 	shmIoctlMailbox *mailbox = (shmIoctlMailbox *) arg;
 	shmIoctlMailboxCallback *cb = mailbox->cb;
 
-	shmIoctlMailboxProcessor(mailbox, cb);
+	while(1) {
+		// Get the next message from the mailbox.
+		int clientPID;
+		shmIoctlMsg *msg = shmIoctlMsgRecv(mailbox, &clientPID);
+
+		// Are we closing?
+		if (mailbox->doClose)
+			break;
+
+		// Pass the message to the server's callback function.
+		msg->result = (*cb)(msg->opcode, msg->msg, &msg->msgSize, clientPID);
+
+		// Send the reply back to the client.
+		if (shmIoctlMsgReply(msg) == -1) {
+			printf("shmIoctlMsgReply(%p) failed.\n", msg);
+		}
+	}
 
 	return NULL;
 }
@@ -49,6 +45,7 @@ shmIoctlMailbox *shmIoctlMailboxOpen(const char *shmPath, int owner, int numThre
 	int shmFlag = 0666 | (owner ? IPC_CREAT : 0);
 
 	int shmid = shmget(my_key, sizeof(shmIoctlMailbox), shmFlag);
+
 	if (shmid == -1) {
 #ifdef __FREEBSD__
 		printf("shmget(%lx, %ld, %o) failed (%m).\n", my_key, sizeof(shmIoctlMailbox), shmFlag);
@@ -66,6 +63,7 @@ shmIoctlMailbox *shmIoctlMailboxOpen(const char *shmPath, int owner, int numThre
 
 	// Store some necessary stuff.
 	mailbox->mailboxShmid = shmid;
+	mailbox->mailboxKey = my_key;
 	mailbox->cb = cb;
 
 	/* PTHREAD_MUTEX_INITIALIZER */
@@ -73,10 +71,10 @@ shmIoctlMailbox *shmIoctlMailboxOpen(const char *shmPath, int owner, int numThre
 	if (pthread_mutexattr_init(&attr)) {
 		printf("STAGE 1: Unable to initialize the Lock attributes.");
 		return NULL;
-	}else if(pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)){
+	} else if(pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) {
 		printf("STAGE 2: Unable to initialize the Lock attributes.");
 		return NULL;
-	}else if(pthread_mutex_init(&mailbox->msgLock, &attr)){
+	} else if(pthread_mutex_init(&mailbox->msgLock, &attr)) {
 		printf("STAGE 3: Unable to initialize the Lock attributes.");
 		return NULL;
 	}
@@ -88,23 +86,25 @@ shmIoctlMailbox *shmIoctlMailboxOpen(const char *shmPath, int owner, int numThre
 			return NULL;
 		}
 
-		// Start all of the requested threads.  The current thread represents one
-		// thread, so we just need to create anything greater than 1.
-		int threads;
-		for(threads = 1; threads < numThreads; threads++) {
+		// Save all of the threadIDs.  We want to make sure they're all shutdown
+		// before we delete the mailbox.
+		mailbox->numThreads = numThreads;
+		mailbox->threadIDs = (pthread_t *) malloc(sizeof(pthread_t) * numThreads);
+
+		// Start all of the requested threads.
+		int i;
+		for(i = 0; i < numThreads; i++) {
 			pthread_attr_t attr;
 			if(pthread_attr_init(&attr)) {
 				printf("%s(): pthread_attr_init() failed (%m).", __FUNCTION__);
 				return NULL;
 			}
 
-			pthread_t threadID;
-			if(pthread_create(&threadID, &attr, shmIoctlMailboxThreadFunc, mailbox) != 0) {
+			if(pthread_create(&mailbox->threadIDs[i], &attr, shmIoctlMailboxThreadFunc, mailbox) != 0) {
 				printf("%s(): pthread_create() failed (%m).", __FUNCTION__);
 				return NULL;
 			}
 		}
-		shmIoctlMailboxProcessor(mailbox, cb);
 	}
 
 	return mailbox;
@@ -116,23 +116,50 @@ void shmIoctlMailboxClose(shmIoctlMailbox *mailbox)
 {
 	int shmid = mailbox->mailboxShmid;
 
-	if (shmctl(shmid, IPC_RMID, NULL) == -1) {
-		printf("%s(): shmctl(%d, IPC_RMID, NULL) failed (%m).\n", __FUNCTION__, shmid);
+	// Get the statistics for shmid.  We'll extract the creator's PID from there.
+	struct shmid_ds buf;
+	int retcode = shmctl(shmid, IPC_STAT, &buf);
+	if (retcode == -1) {
+		printf("%s(): shmctl(%d, IPC_STAT, %p) failed (%m).\n", __FUNCTION__, shmid, &buf);
+		return;
+	}
+	int creatorPID = buf.shm_cpid;
+
+	if (getpid() == creatorPID) {
+		mailbox->doClose = 1;
+
+		int i;
+		for(i = 0; i < mailbox->numThreads; i++) {
+			sem_post(&mailbox->msgSemCmdStart);
+		}
+		for(i = 0; i < mailbox->numThreads; i++) {
+			pthread_join(mailbox->threadIDs[i], NULL);
+		}
+	}
+
+	if (shmdt(mailbox) == -1) {
+		printf("shmdt(%p) failed (%m).\n", mailbox);
+	}
+
+	if (getpid() == creatorPID) {
+		if (shmctl(shmid, IPC_RMID, NULL) == -1) {
+			printf("%s(): shmctl(%d, IPC_RMID, NULL) failed (%m).\n", __FUNCTION__, shmid);
+		}
 	}
 }
 
 /* Create a message that can be passed from the client to the server via the
  * server's mailbox.
  */
-shmIoctlMsg *shmIoctlMsgAllocate(key_t msgKey, size_t size, int owner, int *shmid)
+shmIoctlMsg *shmIoctlMsgAllocate(key_t msgKey, size_t size, int owner)
 {
 	shmIoctlMsg *msg = NULL;
 
 	int shmFlag = 0666 | (owner ? IPC_CREAT : 0);
 	size_t msgSize = sizeof(shmIoctlMsg) + size;
 
-	*shmid = shmget(msgKey, msgSize, shmFlag);
-	if (*shmid == -1) {
+	int shmid = shmget(msgKey, msgSize, shmFlag);
+	if (shmid == -1) {
 #ifdef __FREEBSD__
 		printf("shmget(%lx, %ld, %o) failed (%m).\n", msgKey, msgSize, shmFlag);
 #else
@@ -141,23 +168,21 @@ shmIoctlMsg *shmIoctlMsgAllocate(key_t msgKey, size_t size, int owner, int *shmi
 		return NULL;
 	}
 
-	if(*shmid != -1)
-	{
-		msg = (shmIoctlMsg *) shmat(*shmid, 0, 0);
-		if (msg == (shmIoctlMsg *) -1) {
-			printf("shmat(%d, 0, 0) failed (%m).\n", *shmid);
-			msg = NULL;
-		}
-
-		if (msg) {
-			sem_t *semAddr = &msg->msgSemCmdCmplt;
-			if(sem_init(semAddr, 1, 0) == -1) {
-				printf("sem_init(%p, 1, 0) failed (%m).", semAddr);
-			}
-		}
-
-		msg->msgSize = msgSize;
+	msg = (shmIoctlMsg *) shmat(shmid, 0, 0);
+	if (msg == (shmIoctlMsg *) -1) {
+		printf("shmat(%d, 0, 0) failed (%m).\n", shmid);
+		msg = NULL;
 	}
+
+	if (msg) {
+		sem_t *semAddr = &msg->msgSemCmdCmplt;
+		if(sem_init(semAddr, 1, 0) == -1) {
+			printf("sem_init(%p, 1, 0) failed (%m).", semAddr);
+		}
+	}
+
+	msg->msgShmid = shmid;
+	msg->msgSize = msgSize;
 
 	return msg;
 }
@@ -165,7 +190,7 @@ shmIoctlMsg *shmIoctlMsgAllocate(key_t msgKey, size_t size, int owner, int *shmi
 /* Wait for a new message to arrive in the specified mailbox.  Then grab the
  * message.
  */
-shmIoctlMsg *shmIoctlMsgRecv(shmIoctlMailbox *mailbox, int *msgShmid, int *clientPID)
+shmIoctlMsg *shmIoctlMsgRecv(shmIoctlMailbox *mailbox, int *clientPID)
 {
 	shmIoctlMsg *msg = NULL;
 
@@ -175,9 +200,13 @@ shmIoctlMsg *shmIoctlMsgRecv(shmIoctlMailbox *mailbox, int *msgShmid, int *clien
 		return msg;
 	}
 
+	// If we're shutting down, return immediately.
+	if (mailbox->doClose)
+		return msg;
+
 	// Get the message ID.  Remove it from the mailbox ASAP.
 	__sync_synchronize();
-	*msgShmid = mailbox->msgShmid;
+	int shmid = mailbox->msgShmid;
 
 	// We removed the message ID from the mailbox.  Release the
 	// mutex so the mailbox can receive another message.
@@ -185,32 +214,32 @@ shmIoctlMsg *shmIoctlMsgRecv(shmIoctlMailbox *mailbox, int *msgShmid, int *clien
 
 	// Get the statistics for shmid.  We'll extract the caller's PID from there.
 	struct shmid_ds buf;
-	int retcode = shmctl(*msgShmid, IPC_STAT, &buf);
+	int retcode = shmctl(shmid, IPC_STAT, &buf);
 	if (retcode == -1) {
-		printf("%s(): shmctl(%d, IPC_STAT, %p) failed (%m).\n", __FUNCTION__, *msgShmid, &buf);
+		printf("%s(): shmctl(%d, IPC_STAT, %p) failed (%m).\n", __FUNCTION__, shmid, &buf);
 		*clientPID = -1;
 	}
 	else
 		*clientPID = buf.shm_cpid;
 
 	// Get a pointer to the client's message.
-	msg = (shmIoctlMsg *) shmat(*msgShmid, 0, 0);
+	msg = (shmIoctlMsg *) shmat(shmid, 0, 0);
 	if (msg == (shmIoctlMsg *) -1) {
-		printf("%s(): shmat(%d, 0, 0) failed (%m).\n", __FUNCTION__, *msgShmid);
+		printf("%s(): shmat(%d, 0, 0) failed (%m).\n", __FUNCTION__, shmid);
 		return msg;
 	}
 
 	return msg;
 }
 
-int shmIoctlMsgSend(shmIoctlMailbox *mailbox, shmIoctlMsg *msg, int msgShmid)
+int shmIoctlMsgSend(shmIoctlMailbox *mailbox, shmIoctlMsg *msg)
 {
 	int retcode = -1;
 
 	// Grab the server's mailbox mutex.  Then place our message
 	// into the server's mailbox.
 	pthread_mutex_lock(&mailbox->msgLock);
-	mailbox->msgShmid = msgShmid;
+	mailbox->msgShmid = msg->msgShmid;
 	__sync_synchronize();
 
 	// Tell the server to process our message.
@@ -233,7 +262,7 @@ int shmIoctlMsgSend(shmIoctlMailbox *mailbox, shmIoctlMsg *msg, int msgShmid)
 	return retcode;
 }
 
-int shmIoctlMsgReply(shmIoctlMsg *msg, int msgShmid)
+int shmIoctlMsgReply(shmIoctlMsg *msg)
 {
 	int retcode = -1;
 
@@ -244,7 +273,7 @@ int shmIoctlMsgReply(shmIoctlMsg *msg, int msgShmid)
 	}
 
 	// Delete our handle to the message.
-	shmIoctlMsgDelete(msg, msgShmid);
+	shmIoctlMsgDelete(msg);
 
 	retcode = 0;
 
@@ -253,10 +282,11 @@ int shmIoctlMsgReply(shmIoctlMsg *msg, int msgShmid)
 
 /* Delete the message.
  */
-void shmIoctlMsgDelete(shmIoctlMsg *msg, int shmid)
+void shmIoctlMsgDelete(shmIoctlMsg *msg)
 {
 	pid_t my_pid = getpid();
 
+	int shmid = msg->msgShmid;
 	struct shmid_ds buf;
 	if (shmctl(shmid, IPC_STAT, &buf) == -1) {
 		printf("shmctl(%d, IPC_STAT, %p) failed (%m).\n", shmid, &buf);

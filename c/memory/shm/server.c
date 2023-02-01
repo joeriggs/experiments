@@ -5,35 +5,68 @@
 
 #include "test.h"
 
-/*******************************************************************************
- *******************************************************************************
- ************ Display some fancy statistics on the server's console ************
- *******************************************************************************
- ******************************************************************************/
+static shmIoctlMailbox *mailbox = NULL;
+
+static int exitProgram = 0;
+
 static pthread_mutex_t statsMutex;
 
 static pthread_t    tidList[NUM_SERVER_THREADS];
 static int          tidCounter[NUM_SERVER_THREADS];
 static __thread int tidStatsIndex = -1;
 
-static pid_t     pidList[NUM_CLIENT_PROCESSES];
-static int       pidCounter[NUM_CLIENT_PROCESSES];
+static pid_t        pidList[NUM_CLIENT_PROCESSES];
+static int          pidCounter[NUM_CLIENT_PROCESSES];
 
-WINDOW *mainWin;
+/*******************************************************************************
+ *******************************************************************************
+ ************ Display some fancy statistics on the server's console ************
+ *******************************************************************************
+ ******************************************************************************/
 
+static WINDOW *mainWin;
+static pthread_t statsThreadID = 0;
 static void *statsThread(void *arg)
 {
 	int numThreads = 0;
 	int numProcesses = 0;
 	int clearScreen = 1;
 
-	while(1) {
+	setlocale(LC_NUMERIC, "en_US");
+
+	mainWin = initscr();
+	cbreak(); // Don't wait for <CR> to process characters.
+	noecho(); // Don't echo input characters.
+	nodelay(mainWin, true);
+
+	while(!exitProgram) {
 		if (clearScreen)
 			clear();
 		clearScreen = 0;
 
 		char str[1024];
 		int row = 1;
+
+		// Print some stuff;
+		attron(A_BOLD);
+		mvaddstr(row, 1, "Key: ");
+		attroff(A_BOLD);
+		if (mailbox)
+			sprintf(str, "%x", mailbox->mailboxKey);
+		else
+			sprintf(str, "N/A");
+		mvaddstr(row, 6, str);
+		row++;
+
+		attron(A_BOLD);
+		mvaddstr(row, 1, "shmid: ");
+		attroff(A_BOLD);
+		if (mailbox)
+			sprintf(str, "%d", mailbox->mailboxShmid);
+		else
+			sprintf(str, "N/A");
+		mvaddstr(row, 8, str);
+		row += 2;
 
 		// *************************************************************
 		// *************************************************************
@@ -43,9 +76,9 @@ static void *statsThread(void *arg)
 
 		// Print a column header.
 		attron(A_BOLD);
-		sprintf(str, "Thread             Thread       Number of");
-		mvaddstr(row++, 1, str);
 		sprintf(str, "Number                 ID       Callbacks");
+		mvaddstr(row++, 1, str);
+		sprintf(str, "Thread             Thread       Number of");
 		mvaddstr(row++, 1, str);
 		attroff(A_BOLD);
 
@@ -110,10 +143,47 @@ static void *statsThread(void *arg)
 
 		refresh();
 		sleep(3);
+
+		int ch = wgetch(mainWin);
+		if((ch == 'x') || (ch == 'X')) {
+			exitProgram = 1;
+		}
 	}
 
+	pthread_join(statsThreadID, NULL);
+
+	endwin();
 	return NULL;
 }
+
+static void statsInit(void)
+{
+	// Initialize the counter storage.
+	int i;
+	for(i = 0; i < NUM_SERVER_THREADS; i++) {
+		tidList[i] = 0;
+		tidCounter[i] = 0;
+	}
+	for(i = 0; i < NUM_CLIENT_PROCESSES; i++) {
+		pidList[i] = 0;
+		pidCounter[i] = 0;
+	}
+
+	pthread_mutexattr_t mutexAttr;
+        pthread_mutexattr_init(&mutexAttr);
+        pthread_mutex_init(&statsMutex, &mutexAttr);
+
+	// Start the stats thread.
+	pthread_attr_t attr;
+	pthread_attr_init(&attr);
+	pthread_create(&statsThreadID, &attr, statsThread, NULL);
+}
+
+/*******************************************************************************
+ *******************************************************************************
+ *********************** End of the fancy statistics code **********************
+ *******************************************************************************
+ ******************************************************************************/
 
 /* Update the stats each time our callback function is called.
  */
@@ -161,42 +231,6 @@ static void statsCalc(int clientPID)
 	pthread_mutex_unlock(&statsMutex);
 }
 
-static void statsInit(void)
-{
-	// Initialize the counter storage.
-	int i;
-	for(i = 0; i < NUM_SERVER_THREADS; i++) {
-		tidList[i] = 0;
-		tidCounter[i] = 0;
-	}
-	for(i = 0; i < NUM_CLIENT_PROCESSES; i++) {
-		pidList[i] = 0;
-		pidCounter[i] = 0;
-	}
-
-	setlocale(LC_NUMERIC, "en_US");
-
-	WINDOW *mainWin = initscr();
-	cbreak(); // Don't wait for <CR> to process characters.
-	noecho(); // Don't echo input characters.
-	nodelay(mainWin, true);
-
-	pthread_mutexattr_t mutexAttr;
-        pthread_mutexattr_init(&mutexAttr);
-        pthread_mutex_init(&statsMutex, &mutexAttr);
-
-	// Start the stats thread.
-	pthread_attr_t attr;
-	pthread_t threadID;
-	pthread_attr_init(&attr);
-	pthread_create(&threadID, &attr, statsThread, NULL);
-}
-/*******************************************************************************
- *******************************************************************************
- *********************** End of the fancy statistics code **********************
- *******************************************************************************
- ******************************************************************************/
-
 /* This is the callback function that processes the client's ioctl calls.
  *
  * Input:
@@ -234,11 +268,15 @@ int main(int argc, char **argv)
 	statsInit();
 
 	// Create a mailbox object.  It'll recv calls from the clients, and it will
-	// pass the calls to our callback function.
-	shmIoctlMailbox *mailbox = shmIoctlMailboxOpen(SHM_PATH, 1, NUM_SERVER_THREADS, serverCallback);
+	// pass the calls to the specified callback function.
+	mailbox = shmIoctlMailboxOpen(SHM_PATH, 1, NUM_SERVER_THREADS, serverCallback);
 	if (!mailbox) {
 		printf("shmIoctlMailboxOpen() failed.\n");
 		return 1;
+	}
+
+	while (!exitProgram) {
+		sleep(1);
 	}
 
 	shmIoctlMailboxClose(mailbox);

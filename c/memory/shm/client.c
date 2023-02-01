@@ -102,41 +102,40 @@ int main(int argc, char **argv)
 		return 1;
 	}
 
-	// Allocate a msg object.  We use it to pass ioctl calls to the server.
-	// We use our own PID to create the "key" that is used for the requests
-	// that we send to the server.
-	key_t shmKey = (key_t) getpid();
-	int shmid;
-	shmIoctlMsg *msg = shmIoctlMsgAllocate(shmKey, 100, 1, &shmid);
-	if (!msg) {
-		printf("shmIoctlMsgAllocate() failed.\n");
-		return 1;
-	}
-
 	int counter;
 	for(counter = 1; counter <= maxOps; counter++) {
 
 		// Update our test program stats.
 		statsCalc(counter);
 
+		// Allocate a msg object.  We use it to pass ioctl calls to the server.
+		// We use our own PID to create the "key" that is used for the requests
+		// that we send to the server.
+		key_t shmKey = (key_t) getpid();
+		shmIoctlMsg *msg = shmIoctlMsgAllocate(shmKey, 100, 1);
+		if (!msg) {
+			printf("shmIoctlMsgAllocate() failed.\n");
+			return 1;
+		}
+
 		// =============================================================
 		// PREPARE THE IOCTL MESSAGE.  STORE THE DATA AT:
-		//   msg->ioctl   = The ioctl code.
+		//   msg->opcode  = The ioctl code.
 		//   msg->msg     = The message.
 		//   msg->msgSize = The size of the message.
 		// =============================================================
-		msg->ioctl = 67890;
+		msg->opcode = 67890;
 		int *intPtr = (int *) &msg->msg[0];
 		*intPtr = counter;
 		msg->msgSize = sizeof(int);
 
 		// Send the ioctl call to the server.  Block until it either completes
 		// or times out.
-		if (shmIoctlMsgSend(mailbox, msg, shmid) == -1) {
+		if (shmIoctlMsgSend(mailbox, msg) == -1) {
 			// An error means there was a system failure (probably a
 			// timeout).  It has nothing to do with whether the ioctl
 			// was successful.
-			printf("shmIoctlMsgSend(%p %d) failed.\n", mailbox, shmid);
+			printf("shmIoctlMsgSend(%p %p) failed.\n", mailbox, msg);
 			break;
 		}
 
@@ -147,12 +146,13 @@ int main(int argc, char **argv)
 		//   msg->msgSize = The size of the reply.
 		// =============================================================
 
+		// Delete the message.
+		shmIoctlMsgDelete(msg);
 	}
 
 	statsSummary(counter);
 
-	// Delete the message.
-	shmIoctlMsgDelete(msg, shmid);
+	shmIoctlMailboxClose(mailbox);
 
 	return 0;
 }
