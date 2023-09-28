@@ -9,6 +9,9 @@
 #include <sys/shm.h>
 #include <sys/types.h>
 
+// Each client creates an shmIoctlMsg object.  They use the shmIoctlMsg object to
+// pass their ioctl() calls to their server(s) via the server's shmIoctlMailbox
+// object.
 typedef struct shmIoctlMsg {
 	int msgShmid;
 	sem_t msgSemCmdCmplt;
@@ -18,9 +21,12 @@ typedef struct shmIoctlMsg {
 	unsigned char msg[1];
 } shmIoctlMsg;
 
-typedef int shmIoctlMailboxCallback(int ioctl, unsigned char *msg, size_t *msgSize, int clientPID);
+// Each server has a callback function that will receive incoming ioctl() calls.
+typedef int shmIoctlMailboxCallback(int opcode, unsigned char *msg, size_t *msgSize, int clientPID);
 
 typedef struct shmIoctlMailbox {
+	int initialized;
+
 	int mailboxShmid;
 	key_t mailboxKey;
 	shmIoctlMailboxCallback *cb;

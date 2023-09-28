@@ -72,7 +72,6 @@ static void statsSummary(int counter)
 	mvaddstr(4, 1, str);
 	attroff(A_BOLD);
 	refresh();
-	sleep(10);
 
 	endwin();
 
@@ -91,16 +90,16 @@ int main(int argc, char **argv)
 	if (argc > 1)
 		maxOps = atoi(argv[1]);
 
-	// We'll display some fancy stats on the screen during the test.
-	// Initialize the statistics processor.
-	statsInit();
-
 	// Get a pointer to the server's mailbox.
 	shmIoctlMailbox *mailbox = shmIoctlMailboxOpen(SHM_PATH, 0, 0, NULL);
 	if (!mailbox) {
 		printf("shmIoctlMailboxOpen() failed.\n");
 		return 1;
 	}
+
+	// We'll display some fancy stats on the screen during the test.
+	// Initialize the statistics processor.
+	statsInit();
 
 	int counter;
 	for(counter = 1; counter <= maxOps; counter++) {

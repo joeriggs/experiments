@@ -1,6 +1,11 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
+#include <unistd.h>
+
+#include <sys/stat.h>
+#include <sys/types.h>
 
 #include "shm_ioctl.h"
 
@@ -39,72 +44,142 @@ static void *shmIoctlMailboxThreadFunc(void *arg)
 shmIoctlMailbox *shmIoctlMailboxOpen(const char *shmPath, int owner, int numThreads, shmIoctlMailboxCallback *cb)
 {
 	shmIoctlMailbox *mailbox = NULL;
-
-	key_t my_key = ftok(shmPath, 'W');
+	int initialized = 0;
 
 	int shmFlag = 0666 | (owner ? IPC_CREAT : 0);
 
-	int shmid = shmget(my_key, sizeof(shmIoctlMailbox), shmFlag);
+	int counter = 0;
+	do {
+		counter++;
 
-	if (shmid == -1) {
-#ifdef __FREEBSD__
-		printf("shmget(%lx, %ld, %o) failed (%m).\n", my_key, sizeof(shmIoctlMailbox), shmFlag);
-#else
-		printf("shmget(%x, %ld, %o) failed (%m).\n", my_key, sizeof(shmIoctlMailbox), shmFlag);
+		int shmid = -1;
+		mailbox = NULL;
+
+		do {
+			key_t my_key = ftok(shmPath, 'W');
+
+			shmid = shmget(my_key, sizeof(shmIoctlMailbox), shmFlag);
+			if (shmid == -1) {
+				break;
+			}
+
+			mailbox = (shmIoctlMailbox *) shmat(shmid, 0, 0);
+			if (mailbox == (shmIoctlMailbox *) -1) {
+				mailbox = NULL;
+				break;
+			}
+
+			if (owner) {
+				struct shmid_ds buf;
+				int retcode = shmctl(shmid, IPC_STAT, &buf);
+				if (retcode == -1) {
+					printf("%s(): shmctl(%d, IPC_STAT, %p) failed (%m).\n", __FUNCTION__, shmid, &buf);
+					break;
+				}
+				if (buf.shm_cpid != getpid()) {
+					int retcode = shmctl(shmid, IPC_RMID, NULL);
+					if (retcode == -1) {
+						printf("%s(): shmctl(%d, IPC_RMID, %p) failed (%m).\n", __FUNCTION__, shmid, &buf);
+					}
+					break;
+				}
+
+				// Store some necessary stuff.
+				mailbox->mailboxShmid = shmid;
+				mailbox->mailboxKey = my_key;
+				mailbox->cb = cb;
+
+				/* PTHREAD_MUTEX_INITIALIZER */
+				pthread_mutexattr_t attr;
+				if (pthread_mutexattr_init(&attr)) {
+					printf("STAGE 1: Unable to initialize the Lock attributes.");
+					break;
+				} else if(pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) {
+					printf("STAGE 2: Unable to initialize the Lock attributes.");
+					break;
+				} else if(pthread_mutex_init(&mailbox->msgLock, &attr)) {
+					printf("STAGE 3: Unable to initialize the Lock attributes.");
+					break;
+				}
+
+				sem_t *semAddr = &mailbox->msgSemCmdStart;
+				if(sem_init(semAddr, 1, 0) == -1) {
+					printf("%s(): sem_init(%p, 1, 0) failed (%m).", __FUNCTION__, semAddr);
+					break;;
+				}
+
+				// Save all of the threadIDs.  We want to make sure they're all shutdown
+				// before we delete the mailbox.
+				mailbox->numThreads = numThreads;
+				mailbox->threadIDs = (pthread_t *) malloc(sizeof(pthread_t) * numThreads);
+
+				// Start all of the requested threads.
+				int i;
+				for(i = 0; i < numThreads; i++) {
+					pthread_attr_t attr;
+					if(pthread_attr_init(&attr)) {
+						printf("%s(): pthread_attr_init() failed (%m).", __FUNCTION__);
+						break;
+					}
+
+					if(pthread_create(&mailbox->threadIDs[i], &attr, shmIoctlMailboxThreadFunc, mailbox) != 0) {
+						printf("%s(): pthread_create() failed (%m).", __FUNCTION__);
+						break;
+					}
+				}
+				if (i != numThreads)
+					break;
+
+				__sync_synchronize();
+				mailbox->initialized = 1;
+
+				initialized = 1;
+//sleep(1);
+			}
+
+			else {
+				struct shmid_ds buf;
+				int retcode = shmctl(shmid, IPC_STAT, &buf);
+				if (retcode == -1) {
+					printf("%s(): shmctl(%d, IPC_STAT, %p) failed (%m).\n", __FUNCTION__, shmid, &buf);
+					break;
+				}
+				int creatorPID = buf.shm_cpid;
+
+				struct stat stat_buf;
+				char path[1024];
+				sprintf(path, "/proc/%d", creatorPID);
+				if (stat(path, &stat_buf) == -1)
+					break;
+
+				if (!mailbox->initialized)
+					break;
+
+				initialized = 1;
+			}
+		} while(0);
+
+		if (!initialized) {
+			if (mailbox) {
+				shmdt(mailbox);
+				mailbox = (shmIoctlMailbox *) -1;
+			}
+		}
+		else
+			usleep(10);
+
+	} while (!initialized);
+
+	{ // JOE RIGGS
+//		char str[1024]; memset(str, 0, sizeof(str));
+//		sprintf(str, "%s(%s, %d, %d, %p) #%d completed.\n", __FUNCTION__, shmPath, owner, numThreads, cb, counter);
+//		shm_log_str(str);
+	}
+
+	if (!mailbox) {
+#ifdef __IFS_ERROR
+		__IFS_ERROR("%s(%%s, %d, %d, %p) failed.\n", __FUNCTION__, shmPath, owner, numThreads, cb);
 #endif
-		return NULL;
-	}
-
-	mailbox = (shmIoctlMailbox *) shmat(shmid, 0, 0);
-	if (mailbox == (shmIoctlMailbox *) -1) {
-		printf("shmat(%d, 0, 0) failed (%m).\n", shmid);
-		return NULL;
-	}
-
-	// Store some necessary stuff.
-	mailbox->mailboxShmid = shmid;
-	mailbox->mailboxKey = my_key;
-	mailbox->cb = cb;
-
-	/* PTHREAD_MUTEX_INITIALIZER */
-	pthread_mutexattr_t attr;
-	if (pthread_mutexattr_init(&attr)) {
-		printf("STAGE 1: Unable to initialize the Lock attributes.");
-		return NULL;
-	} else if(pthread_mutexattr_setpshared(&attr, PTHREAD_PROCESS_SHARED)) {
-		printf("STAGE 2: Unable to initialize the Lock attributes.");
-		return NULL;
-	} else if(pthread_mutex_init(&mailbox->msgLock, &attr)) {
-		printf("STAGE 3: Unable to initialize the Lock attributes.");
-		return NULL;
-	}
-
-	if (owner) {
-		sem_t *semAddr = &mailbox->msgSemCmdStart;
-		if(sem_init(semAddr, 1, 0) == -1) {
-			printf("%s(): sem_init(%p, 1, 0) failed (%m).", __FUNCTION__, semAddr);
-			return NULL;
-		}
-
-		// Save all of the threadIDs.  We want to make sure they're all shutdown
-		// before we delete the mailbox.
-		mailbox->numThreads = numThreads;
-		mailbox->threadIDs = (pthread_t *) malloc(sizeof(pthread_t) * numThreads);
-
-		// Start all of the requested threads.
-		int i;
-		for(i = 0; i < numThreads; i++) {
-			pthread_attr_t attr;
-			if(pthread_attr_init(&attr)) {
-				printf("%s(): pthread_attr_init() failed (%m).", __FUNCTION__);
-				return NULL;
-			}
-
-			if(pthread_create(&mailbox->threadIDs[i], &attr, shmIoctlMailboxThreadFunc, mailbox) != 0) {
-				printf("%s(): pthread_create() failed (%m).", __FUNCTION__);
-				return NULL;
-			}
-		}
 	}
 
 	return mailbox;

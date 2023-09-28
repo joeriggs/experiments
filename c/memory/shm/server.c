@@ -76,9 +76,9 @@ static void *statsThread(void *arg)
 
 		// Print a column header.
 		attron(A_BOLD);
-		sprintf(str, "Number                 ID       Callbacks");
-		mvaddstr(row++, 1, str);
 		sprintf(str, "Thread             Thread       Number of");
+		mvaddstr(row++, 1, str);
+		sprintf(str, "Number                 ID       Callbacks");
 		mvaddstr(row++, 1, str);
 		attroff(A_BOLD);
 
@@ -117,7 +117,7 @@ static void *statsThread(void *arg)
 
 		// Print a column header.
 		attron(A_BOLD);
-		sprintf(str, "Client             CLient       Number of");
+		sprintf(str, "Client             Client       Number of");
 		mvaddstr(row++, 1, str);
 		sprintf(str, "Process               PID       Callbacks");
 		mvaddstr(row++, 1, str);
