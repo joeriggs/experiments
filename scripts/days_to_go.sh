@@ -17,15 +17,16 @@
 #   C = Clock (DDDDD:HH:MM:SS).
 #   P = Percentage from start to finish.
 ########################################
-TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2022-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="D"
-TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2022-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="W"
-TARGET_BEG[${#TARGET_BEG[@]}]="2020-04-04 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2022-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
-TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2021-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="D"
-TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2021-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="W"
-TARGET_BEG[${#TARGET_BEG[@]}]="2020-04-04 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2021-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
+TARGET_HDR[${#TARGET_BEG[@]}]="PCT THIS YEAR";   TARGET_BEG[${#TARGET_BEG[@]}]="2023-01-01 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2024-01-01 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
+TARGET_HDR[${#TARGET_BEG[@]}]="'TIL JOE'S 65";   TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2027-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="D"
+TARGET_HDR[${#TARGET_BEG[@]}]="'TIL JOE'S 65";   TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2027-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="Y"
+TARGET_HDR[${#TARGET_BEG[@]}]="'TIL JOE'S 65";   TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2027-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="W"
+TARGET_HDR[${#TARGET_BEG[@]}]="JOE 61 TO 65";    TARGET_BEG[${#TARGET_BEG[@]}]="2023-04-04 00:00:00"; TARGET_END[${#TARGET_END[@]}]="2027-04-04 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="P"
+TARGET_HDR[${#TARGET_BEG[@]}]="'TIL DEB'S 59.5"; TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2024-02-17 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="Y"
+TARGET_HDR[${#TARGET_BEG[@]}]="'TIL DEB'S 59.5"; TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2024-02-17 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="W"
+TARGET_HDR[${#TARGET_BEG[@]}]="'TIL DEB'S 62";   TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2026-08-17 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="Y"
+TARGET_HDR[${#TARGET_BEG[@]}]="'TIL DEB'S 62";   TARGET_BEG[${#TARGET_BEG[@]}]="";                    TARGET_END[${#TARGET_END[@]}]="2026-08-17 00:00:00"; TARGET_DISP[${#TARGET_DISP[@]}]="W"
 TARGET_END_COUNT=${#TARGET_END[@]}
-
-echo ${TARGET_END}
 
 ########################################
 # Constants.  DO NOT MODIFY.
@@ -73,7 +74,18 @@ printf "Press <Enter> to continue.  Press <Ctrl-C> to quit. "
 read
 
 ########################################
-# Print a header.
+# Print a title.
+TARGET_HDR_INDEX=0
+printf " | "
+while [ ${TARGET_HDR_INDEX} -lt ${TARGET_END_COUNT} ]; do
+  TARGET_HDR_STRING="${TARGET_HDR[${TARGET_HDR_INDEX}]}"
+  [ -z "${TARGET_HDR_STRING}" ] && TARGET_HDR_STRING="                   "
+  printf "   %19s | " "${TARGET_HDR_STRING}"
+  TARGET_HDR_INDEX=`expr ${TARGET_HDR_INDEX} + 1`
+done
+printf "                    |\n"
+
+# Print header line #1.
 TARGET_BEG_INDEX=0
 printf " | "
 while [ ${TARGET_BEG_INDEX} -lt ${TARGET_END_COUNT} ]; do
@@ -84,6 +96,7 @@ while [ ${TARGET_BEG_INDEX} -lt ${TARGET_END_COUNT} ]; do
 done
 printf "                    |\n"
 
+# Print header line #2.
 TARGET_END_INDEX=0
 printf " | "
 while [ ${TARGET_END_INDEX} -lt ${TARGET_END_COUNT} ]; do
