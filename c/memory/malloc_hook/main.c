@@ -196,7 +196,7 @@ int main(int argc, char *argv[])
 	myq_print();
 
 	printf("Do some free tests ======================================\n");
-	free(p1);
+	//free(p1);
 	free(p2);
 	free(p3);
 	free(p4);
