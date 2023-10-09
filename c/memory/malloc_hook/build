@@ -1,1 +1,1 @@
-cc -O0 -g main.c -o main -ldl
+cc -O0 -g main.c -o main -ldl -lexecinfo
