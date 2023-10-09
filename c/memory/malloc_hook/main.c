@@ -14,8 +14,8 @@
 
 #define MEM_HOOK_LOGGER printf
 
-static int doTheLog = 1;
-static int doTheQueue = 1;
+static int doTheLog = 0;
+static int doTheQueue = 0;
 
 static __thread int doingPrint = 0;
 
@@ -169,6 +169,7 @@ static void malloc_hooks_init(void)
 	}
 }
 
+#ifndef __LINUX__
 void *calloc(size_t number, size_t size)
 {
 	if (__calloc == NULL)
@@ -189,6 +190,7 @@ void *calloc(size_t number, size_t size)
 
 	return ptr;
 }
+#endif
 
 void *malloc(size_t size)
 {
@@ -274,6 +276,9 @@ void free(void *ptr)
 
 int main(int argc, char *argv[])
 {
+	doTheLog = 1;
+	doTheQueue = 1;
+
 	void *p1 = NULL, *p2 = NULL, *p3 = NULL, *p4 = NULL;
 
 	printf("Do some alloc tests =====================================\n");
