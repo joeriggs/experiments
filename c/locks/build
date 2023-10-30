@@ -1,0 +1,10 @@
+#!/bin/bash
+
+CC=gcc
+[ "`uname -s`" == "FreeBSD" ] && CC=cc
+
+${CC} main.c -O0 -g -o main -l pthread
+[ "$?" != "0" ] && exit 1
+
+exit 0
+
