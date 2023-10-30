@@ -23,22 +23,22 @@ static void print_proc_stats(pid_t pid)
   int rc = getrusage(RUSAGE_SELF, &usage);
   printf("getrusage() returned %d.\n", rc);
   if(rc == 0) {
-    printf("ru_utime    = %d.\n", usage.ru_utime);    /* user CPU time used */
-    printf("ru_stime    = %d.\n", usage.ru_stime);    /* system CPU time used */
-    printf("ru_maxrss   = %d.\n", usage.ru_maxrss);   /* maximum resident set size */
-    printf("ru_ixrss    = %d.\n", usage.ru_ixrss);    /* integral shared memory size */
-    printf("ru_idrss    = %d.\n", usage.ru_idrss);    /* integral unshared data size */
-    printf("ru_isrss    = %d.\n", usage.ru_isrss);    /* integral unshared stack size */
-    printf("ru_minflt   = %d.\n", usage.ru_minflt);   /* page reclaims (soft page faults) */
-    printf("ru_majflt   = %d.\n", usage.ru_majflt);   /* page faults (hard page faults) */
-    printf("ru_nswap    = %d.\n", usage.ru_nswap);    /* swaps */
-    printf("ru_inblock  = %d.\n", usage.ru_inblock);  /* block input operations */
-    printf("ru_oublock  = %d.\n", usage.ru_oublock);  /* block output operations */
-    printf("ru_msgsnd   = %d.\n", usage.ru_msgsnd);   /* IPC messages sent */
-    printf("ru_msgrcv   = %d.\n", usage.ru_msgrcv);   /* IPC messages received */
-    printf("ru_nsignals = %d.\n", usage.ru_nsignals); /* signals received */
-    printf("ru_nvcsw    = %d.\n", usage.ru_nvcsw);    /* voluntary context switches */
-    printf("ru_niivcsw  = %d.\n", usage.ru_nivcsw);   /* involuntary context switches */
+    printf("ru_utime    = %ld.\n", usage.ru_utime);    /* user CPU time used */
+    printf("ru_stime    = %ld.\n", usage.ru_stime);    /* system CPU time used */
+    printf("ru_maxrss   = %ld.\n", usage.ru_maxrss);   /* maximum resident set size */
+    printf("ru_ixrss    = %ld.\n", usage.ru_ixrss);    /* integral shared memory size */
+    printf("ru_idrss    = %ld.\n", usage.ru_idrss);    /* integral unshared data size */
+    printf("ru_isrss    = %ld.\n", usage.ru_isrss);    /* integral unshared stack size */
+    printf("ru_minflt   = %ld.\n", usage.ru_minflt);   /* page reclaims (soft page faults) */
+    printf("ru_majflt   = %ld.\n", usage.ru_majflt);   /* page faults (hard page faults) */
+    printf("ru_nswap    = %ld.\n", usage.ru_nswap);    /* swaps */
+    printf("ru_inblock  = %ld.\n", usage.ru_inblock);  /* block input operations */
+    printf("ru_oublock  = %ld.\n", usage.ru_oublock);  /* block output operations */
+    printf("ru_msgsnd   = %ld.\n", usage.ru_msgsnd);   /* IPC messages sent */
+    printf("ru_msgrcv   = %ld.\n", usage.ru_msgrcv);   /* IPC messages received */
+    printf("ru_nsignals = %ld.\n", usage.ru_nsignals); /* signals received */
+    printf("ru_nvcsw    = %ld.\n", usage.ru_nvcsw);    /* voluntary context switches */
+    printf("ru_niivcsw  = %ld.\n", usage.ru_nivcsw);   /* involuntary context switches */
   }
 }
 
