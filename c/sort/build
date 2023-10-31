@@ -1,0 +1,4 @@
+#!/bin/bash
+
+cc -O0 -g main.c -o main
+
