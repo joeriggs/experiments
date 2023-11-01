@@ -74,7 +74,7 @@ static int get_process_list(struct kinfo_proc *kproc_list, size_t max_count)
 	return count;
 }
 
-/* qsort_r() will pass 2 proc_info objects to this function.  We compare the
+/* qsort() will pass 2 proc_info objects to this function.  We compare the
  * pids and return the result.
  */
 static int cmp_proc_info_objs(const void *p1, const void *p2)
