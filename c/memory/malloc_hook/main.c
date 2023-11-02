@@ -76,7 +76,7 @@ static void myq_add(void *ptr, size_t size) {
 		int num_callers = backtrace(tracePtrs, 100);
 
 		if ((num_callers == 0) || (num_callers > 100)) {
-			printf("JOE RIGGS SPOTTED AN ERROR (%d) (%m).", num_callers);
+			MEM_HOOK_LOGGER("SPOTTED AN ERROR (%d) (%m).", num_callers);
 		}
 
 		pthread_mutex_lock(&myq_mutex);
@@ -136,22 +136,22 @@ static void *malloc_hooks_thread(void *arg)
 
 		struct stat s;
 		if (stat("/tmp/doq", &s) == 0) {
-			printf("JOE RIGGS: Start the queue.");
+			MEM_HOOK_LOGGER("Start the queue.");
 			unlink("/tmp/doq");
 			doTheQueue = 1;
 		}
 		if (stat("/tmp/noq", &s) == 0) {
-			printf("JOE RIGGS: Stop the queue.");
+			MEM_HOOK_LOGGER("Stop the queue.");
 			unlink("/tmp/noq");
 			doTheQueue = 0;
 		}
 		if (stat("/tmp/print", &s) == 0) {
-			printf("JOE RIGGS: Print the queue.");
+			MEM_HOOK_LOGGER("Print the queue.");
 			unlink("/tmp/print");
 			myq_print();
 		}
 		if (stat("/tmp/reset", &s) == 0) {
-			printf("JOE RIGGS: Reset the queue.");
+			MEM_HOOK_LOGGER("Reset the queue.");
 			unlink("/tmp/reset");
 			myq_reset();
 		}
