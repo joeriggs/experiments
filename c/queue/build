@@ -1,0 +1,9 @@
+#!/bin/bash
+
+if [ "`uname -s`" == "Linux" ]; then
+	cc -O0 -g -D __LINUX__ main.c -o main -ldl -lpthread
+else
+	# FreeBSD
+	cc -O0 -g main.c -o main -ldl -lexecinfo
+fi
+
