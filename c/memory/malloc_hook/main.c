@@ -1,16 +1,21 @@
 
-#define RTLD_NEXT  ((void *) -1l)
-
 #include <dlfcn.h>
 #include <execinfo.h>
 #include <pthread.h>
-#include <sys/stat.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 
+#include <sys/queue.h>
+#include <sys/stat.h>
+
 #include <sys/types.h>
+
+#ifndef RTLD_NEXT
+#define RTLD_NEXT  ((void *) -1l)
+#endif
 
 #define MEM_HOOK_LOGGER printf
 
@@ -26,18 +31,28 @@ static void *(*__realloc)(void *ptr, size_t size) = NULL;
 static void  (*__free)(const void *addr) = NULL;
 
 #define NUM_CALLERS 32
-typedef struct my_queue {
-	int used;
+typedef struct alloc_event {
 	size_t num_callers;
 	void *callers[NUM_CALLERS];
 	void *ptr;
 	size_t size;
-} my_queue;
+	TAILQ_ENTRY(alloc_event) tailq;
+} alloc_event;
 #define MY_QUEUE_SIZE 1000000
-static my_queue myq[MY_QUEUE_SIZE];
+static alloc_event myq[MY_QUEUE_SIZE];
 static int myq_adds = 0;
 static int myq_dels = 0;
 pthread_mutex_t myq_mutex;
+
+/* This is the definition of the alloc_event_queue data type. */
+TAILQ_HEAD(alloc_event_queue, alloc_event);
+
+/* These are the declarations of the alloc_event_queue objects. */
+static struct alloc_event_queue free_event_queue;
+
+#define NUM_USED_EVENT_QUEUE_BUCKETS 256
+#define BUCKET_MASK 0xff
+static struct alloc_event_queue used_event_queue[NUM_USED_EVENT_QUEUE_BUCKETS];
 
 static void myq_print(void) {
 	int num_entries = 0;
@@ -47,19 +62,21 @@ static void myq_print(void) {
 	pthread_mutex_lock(&myq_mutex);
 
 	int i;
-	char callerList[NUM_CALLERS * 32];
-	for (i = 0; i < MY_QUEUE_SIZE; i++) {
-		if (myq[i].used) {
+	for (i = 0; i < NUM_USED_EVENT_QUEUE_BUCKETS; i++) {
+		struct alloc_event *entry;
+		TAILQ_FOREACH(entry, &used_event_queue[i], tailq) {
+			char callerList[NUM_CALLERS * 32];
+
 			num_entries++;
 			memset(callerList, 0, sizeof(callerList));
 			int x;
-			for (x = 0; (x < NUM_CALLERS) && (x < myq[i].num_callers); x++) {
+			for (x = 0; (x < NUM_CALLERS) && (x < entry->num_callers); x++) {
 				char oneCaller[32];
-				sprintf(oneCaller, "%p ", myq[i].callers[x]);
+				sprintf(oneCaller, "%p ", entry->callers[x]);
 				strcat(callerList, oneCaller);
 			}
-			MEM_HOOK_LOGGER("%5d: Ptr %p: Size %ld: Callers (%ld) (%s).\n",
-				    i, myq[i].ptr, myq[i].size, myq[i].num_callers, callerList);
+			MEM_HOOK_LOGGER("Ptr %p: Size %ld: Callers (%ld) (%s).\n",
+				    entry->ptr, entry->size, entry->num_callers, callerList);
 		}
 	}
 
@@ -71,50 +88,57 @@ static void myq_print(void) {
 
 static void myq_add(void *ptr, size_t size) {
 	if (doTheQueue) {
-		int i;
+		/* Get the backtrace to this call. */
 		void *tracePtrs[100];
 		int num_callers = backtrace(tracePtrs, 100);
-
 		if ((num_callers == 0) || (num_callers > 100)) {
 			MEM_HOOK_LOGGER("SPOTTED AN ERROR (%d) (%m).", num_callers);
 		}
 
 		pthread_mutex_lock(&myq_mutex);
-		for (i = 0; i < MY_QUEUE_SIZE; i++) {
-			if (myq[i].used == 0) {
-				myq[i].used = 1;
-				// The first 2 callers are our malloc_hook functions.
-				// Skip them.
-				myq[i].num_callers = num_callers - 2;
-				int x;
-				for (x = 0; (x < NUM_CALLERS) && (x < num_callers); x++) {
-					myq[i].callers[x] = tracePtrs[x + 2];
-				}
-				myq[i].ptr = ptr;
-				myq[i].size = size;
-				break;
-			}
-		}
-		myq_adds++;
-		pthread_mutex_unlock(&myq_mutex);
 
-		if (i == MY_QUEUE_SIZE)
-			MEM_HOOK_LOGGER("Ran out of slots.");
+		if (TAILQ_EMPTY(&free_event_queue)) {
+			MEM_HOOK_LOGGER("Ran out of slots.\n");
+		} else {
+
+			struct alloc_event *first_entry = TAILQ_FIRST(&free_event_queue);
+			TAILQ_REMOVE(&free_event_queue, first_entry, tailq);
+
+			/* The first 2 callers are our malloc_hook functions.  Skip them. */
+			first_entry->num_callers = num_callers - 2;
+			int x;
+			for (x = 0; (x < NUM_CALLERS) && (x < num_callers); x++) {
+				first_entry->callers[x] = tracePtrs[x + 2];
+			}
+			first_entry->ptr = ptr;
+			first_entry->size = size;
+
+			uint64_t bucket = ((uint64_t) ptr >> 4) & BUCKET_MASK;
+			TAILQ_INSERT_TAIL(&used_event_queue[bucket], first_entry, tailq);
+			myq_adds++;
+		}
+
+		pthread_mutex_unlock(&myq_mutex);
 	}
 }
 
-static void myq_del(void *ptr) {
+static void myq_del(void *ptr)
+{
 	if (doTheQueue) {
-		int i;
-
 		pthread_mutex_lock(&myq_mutex);
-		for (i = 0; i < MY_QUEUE_SIZE; i++) {
-			if (myq[i].ptr == ptr) {
-				myq[i].used = 0;
-				break;
+
+		int i;
+		for (i = 0; i < NUM_USED_EVENT_QUEUE_BUCKETS; i++) {
+			struct alloc_event *entry;
+			TAILQ_FOREACH(entry, &used_event_queue[i], tailq) {
+				if (entry->ptr == ptr) {
+					TAILQ_REMOVE(&used_event_queue[i], entry, tailq);
+					TAILQ_INSERT_TAIL(&free_event_queue, entry, tailq);
+				}
 			}
 		}
 		myq_dels++;
+
 		pthread_mutex_unlock(&myq_mutex);
 	}
 }
@@ -162,18 +186,57 @@ static void *malloc_hooks_thread(void *arg)
 
 static void malloc_hooks_init(void)
 {
+	TAILQ_INIT(&free_event_queue);
+
+	int i;
+	for (i = 0; i < NUM_USED_EVENT_QUEUE_BUCKETS; i++) {
+		TAILQ_INIT(&used_event_queue[i]);
+	}
+
+	for (i = 0; i < MY_QUEUE_SIZE; i++) {
+		TAILQ_INSERT_TAIL(&free_event_queue, &myq[i], tailq);
+	}
+
 	pthread_t tid;
 	int ret = pthread_create(&tid, NULL, malloc_hooks_thread, NULL);
 	if (ret) {
-		printf("pthread_create() failed (%m).");
+		MEM_HOOK_LOGGER("pthread_create() failed (%m).");
 	}
 }
 
-#ifndef __LINUX__
+/* On Linux, calling dlsym() to get the address of the "calloc" function
+ * results in calloc() getting called again.  This is an array of buffers that
+ * can be used to satisfy calloc() calls until dlsym() returns.
+ */
+static unsigned char callocBuf[100][65536];
+static void *callocBufBeg = &callocBuf[0][0];
+static void *callocBufEnd = &callocBuf[99][65535];
+
 void *calloc(size_t number, size_t size)
 {
-	if (__calloc == NULL)
-		__calloc = dlsym(RTLD_NEXT, "calloc");
+	if (__calloc == NULL) {
+		static int called_dlsym = 0;
+
+		/* We need to make sure we only call dlsym() once.  dlsym() is
+		 * going to eventually call us again, so we need to make sure we
+		 * don't get caught in a loop. */
+		if (!called_dlsym) {
+			called_dlsym = 1;
+			__calloc = dlsym(RTLD_NEXT, "calloc");
+		}
+
+		else {
+			/* While dlsym() is fetching the address of the "calloc"
+			 * function for us, we will handle any interim calls to
+			 * calloc() by returning the addresses of some static
+			 * arrays. */
+			static int index = 0;
+			unsigned char *b = &callocBuf[index++][0];
+
+			memset(b, 0, 65536);
+			return b;
+		}
+	}
 
 	void *ptr = __calloc(number, size);
 
@@ -190,7 +253,6 @@ void *calloc(size_t number, size_t size)
 
 	return ptr;
 }
-#endif
 
 void *malloc(size_t size)
 {
@@ -257,6 +319,10 @@ void *realloc(void *ptr, size_t size)
 
 void free(void *ptr)
 {
+	/* If the caller is freeing one of our static buffers, then return. */
+	if ((ptr >= callocBufBeg) && (ptr <= callocBufEnd))
+		return;
+
 	if (__free == NULL)
 		__free = dlsym(RTLD_NEXT, "free");
 
@@ -276,19 +342,21 @@ void free(void *ptr)
 
 int main(int argc, char *argv[])
 {
+	malloc_hooks_init();
+
 	doTheLog = 1;
 	doTheQueue = 1;
 
 	void *p1 = NULL, *p2 = NULL, *p3 = NULL, *p4 = NULL;
 
-	printf("Do some alloc tests =====================================\n");
+	MEM_HOOK_LOGGER("Do some alloc tests =====================================\n");
 	p1 = malloc(1);
 	p2 = calloc(10, 1);
 	int rc = posix_memalign(&p3, 64, 1024);
 	p4 = realloc(p1, 1024);
 	myq_print();
 
-	printf("Do some free tests ======================================\n");
+	MEM_HOOK_LOGGER("Do some free tests ======================================\n");
 	//free(p1);
 	free(p2);
 	free(p3);
