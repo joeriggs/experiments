@@ -1,6 +1,7 @@
 
 #include <dlfcn.h>
 #include <execinfo.h>
+#include <fcntl.h>
 #include <pthread.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -18,6 +19,7 @@
 #endif
 
 #define MEM_HOOK_LOGGER printf
+#define LOG_FILE "/tmp/malloc.log"
 
 static int doTheLog = 0;
 static int doTheQueue = 0;
@@ -42,6 +44,8 @@ typedef struct alloc_event {
 static alloc_event myq[MY_QUEUE_SIZE];
 static int myq_adds = 0;
 static int myq_dels = 0;
+static uint64_t total_bytes_allocated = 0;
+static uint64_t total_bytes_freed = 0;
 pthread_mutex_t myq_mutex;
 
 /* This is the definition of the alloc_event_queue data type. */
@@ -57,10 +61,21 @@ static struct alloc_event_queue used_event_queue[NUM_USED_EVENT_QUEUE_BUCKETS];
 static void myq_print(void) {
 	int num_entries = 0;
 	doingPrint = 1;
-	MEM_HOOK_LOGGER("=========================================================\n");
-	MEM_HOOK_LOGGER("myq_adds %d : myq_dels %d.", myq_adds, myq_dels);
+	const char *separator = "=========================================================";
+
+	int fd = open(LOG_FILE, O_RDWR | O_CREAT | O_TRUNC, 0777);
+	if (fd == -1) {
+		MEM_HOOK_LOGGER("Unable to open log file (%s).\n", LOG_FILE);
+		return;
+	}
+	dprintf(fd, "%s\n", separator);
+
+	dprintf(fd, "myq_adds %d (%ld) : myq_dels %d (%ld) : diff %d (%ld).\n",
+		myq_adds, total_bytes_allocated, myq_dels, total_bytes_freed,
+		myq_adds - myq_dels, total_bytes_allocated - total_bytes_freed);
 	pthread_mutex_lock(&myq_mutex);
 
+	size_t num_alloced = 0;
 	int i;
 	for (i = 0; i < NUM_USED_EVENT_QUEUE_BUCKETS; i++) {
 		struct alloc_event *entry;
@@ -68,6 +83,7 @@ static void myq_print(void) {
 			char callerList[NUM_CALLERS * 32];
 
 			num_entries++;
+			num_alloced += entry->size;
 			memset(callerList, 0, sizeof(callerList));
 			int x;
 			for (x = 0; (x < NUM_CALLERS) && (x < entry->num_callers); x++) {
@@ -75,14 +91,16 @@ static void myq_print(void) {
 				sprintf(oneCaller, "%p ", entry->callers[x]);
 				strcat(callerList, oneCaller);
 			}
-			MEM_HOOK_LOGGER("Ptr %p: Size %ld: Callers (%ld) (%s).\n",
+			dprintf(fd, "Ptr %p: Size %ld: Callers (%ld) (%s).\n",
 				    entry->ptr, entry->size, entry->num_callers, callerList);
 		}
 	}
 
 	pthread_mutex_unlock(&myq_mutex);
-	MEM_HOOK_LOGGER("num_entries %d.", num_entries);
-	MEM_HOOK_LOGGER("=========================================================\n");
+	dprintf(fd, "num_entries %d.  num_alloced %ld.\n", num_entries, num_alloced);
+	dprintf(fd, "%s\n", separator);
+	close(fd);
+
 	doingPrint = 0;
 }
 
@@ -116,6 +134,7 @@ static void myq_add(void *ptr, size_t size) {
 			uint64_t bucket = ((uint64_t) ptr >> 4) & BUCKET_MASK;
 			TAILQ_INSERT_TAIL(&used_event_queue[bucket], first_entry, tailq);
 			myq_adds++;
+			total_bytes_allocated += size;
 		}
 
 		pthread_mutex_unlock(&myq_mutex);
@@ -132,6 +151,8 @@ static void myq_del(void *ptr)
 			struct alloc_event *entry;
 			TAILQ_FOREACH(entry, &used_event_queue[i], tailq) {
 				if (entry->ptr == ptr) {
+					total_bytes_freed += entry->size;
+
 					TAILQ_REMOVE(&used_event_queue[i], entry, tailq);
 					TAILQ_INSERT_TAIL(&free_event_queue, entry, tailq);
 				}
@@ -246,7 +267,8 @@ void *calloc(size_t number, size_t size)
 
 		const void *caller = __builtin_return_address(0);
 		if (doTheLog) {
-			MEM_HOOK_LOGGER("%s(): number %lu: size %lu: caller %p: ptr %p.\n", __FUNCTION__, number, size, caller, ptr);
+			MEM_HOOK_LOGGER("%s(): number %lu: size %lu: caller %p: ptr %p.\n",
+					__FUNCTION__, number, size, caller, ptr);
 		}
 		doingPrint = 0;
 	}
@@ -267,7 +289,8 @@ void *malloc(size_t size)
 
 		const void *caller = __builtin_return_address(0);
 		if (doTheLog) {
-			MEM_HOOK_LOGGER("%s(): size %lu: caller %p: ptr %p.\n", __FUNCTION__, size, caller, ptr);
+			MEM_HOOK_LOGGER("%s(): size %lu: caller %p: ptr %p.\n",
+					__FUNCTION__, size, caller, ptr);
 		}
 		doingPrint = 0;
 	}
@@ -288,7 +311,8 @@ int posix_memalign(void **ptr, size_t alignment, size_t size)
 
 		const void *caller = __builtin_return_address(0);
 		if (doTheLog) {
-			MEM_HOOK_LOGGER("%s(): ptr %p (%p): alignment %lu: size %lu: caller %p: ptr %p.\n", __FUNCTION__, ptr, *ptr, alignment, size, caller, ptr);
+			MEM_HOOK_LOGGER("%s(): ptr %p (%p): alignment %lu: size %lu: caller %p: ptr %p.\n",
+					__FUNCTION__, ptr, *ptr, alignment, size, caller, ptr);
 		}
 		doingPrint = 0;
 	}
@@ -309,7 +333,8 @@ void *realloc(void *ptr, size_t size)
 
 		const void *caller = __builtin_return_address(0);
 		if (doTheLog) {
-			MEM_HOOK_LOGGER("%s(): ptr %p: size %lu: caller %p: new_ptr %p.\n", __FUNCTION__, ptr, size, caller, new_ptr);
+			MEM_HOOK_LOGGER("%s(): ptr %p: size %lu: caller %p: new_ptr %p.\n",
+					__FUNCTION__, ptr, size, caller, new_ptr);
 		}
 		doingPrint = 0;
 	}
@@ -334,7 +359,8 @@ void free(void *ptr)
 
 		const void *caller = __builtin_return_address(0);
 		if (doTheLog) {
-			MEM_HOOK_LOGGER("%s(): caller %p: ptr %p.\n", __FUNCTION__, caller, ptr);
+			MEM_HOOK_LOGGER("%s(): caller %p: ptr %p.\n",
+					__FUNCTION__, caller, ptr);
 		}
 		doingPrint = 0;
 	}
