@@ -1,4 +1,9 @@
 
+/* This program shows how to modify source code and insert a breakpoint.  It
+ * also shows how to insert yourself into the flow so that you can intercept
+ * a function when it is called, and you can intercept it when it returns.
+ */
+
 #include <signal.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -18,6 +23,15 @@
 static int pagesize = -1;
 static int pagemask = -1;
 
+/* breakpoint_handler() inserts the address of this function into the ctx.
+ */
+static int breakpoint_handler_return(void)
+{
+	printf("%s(): You should see this message.\n", __FUNCTION__);
+
+	return 0x87654321;
+}
+
 /* This is a SIGTRAP handler.  It's responsible for handling breakpoints.
  */
 static void breakpoint_handler(int sig, siginfo_t *info, void *ptr)
@@ -27,6 +41,8 @@ static void breakpoint_handler(int sig, siginfo_t *info, void *ptr)
 
 	printf("%s(): sig %d : info %p : ctx %p : return_address %lx.\n",
 	       __FUNCTION__, sig, info, ctx, return_address);
+
+	ctx->uc_mcontext.rip = (uint64_t) breakpoint_handler_return;
 }
 
 /* Set up a signal handler to catch SIGTRAP signals.  The SIGTRAP handler is
@@ -101,7 +117,7 @@ static int breakpoint_handler_set(void *addr)
 
 static int test_function(void)
 {
-	printf("%s(): I am in the function.\n", __FUNCTION__);
+	printf("%s(): You shouldn't see this message.\n", __FUNCTION__);
 
 	return 0x12345678;
 }
