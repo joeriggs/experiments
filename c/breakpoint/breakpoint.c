@@ -1,7 +1,9 @@
 
 #include <signal.h>
+#include <stdint.h>
 #include <stdio.h>
 #include <string.h>
+#include <asm-generic/ucontext.h>
 #include <unistd.h>
 
 #include <sys/mman.h>
@@ -18,10 +20,13 @@ static int pagemask = -1;
 
 /* This is a SIGTRAP handler.  It's responsible for handling breakpoints.
  */
-static void breakpoint_handler(int sig, siginfo_t *info, void *ctx)
+static void breakpoint_handler(int sig, siginfo_t *info, void *ptr)
 {
-	printf("%s(): sig %d : info %p : ctx %p.\n",
-	       __FUNCTION__, sig, info, ctx);
+	struct ucontext *ctx = (struct ucontext *) ptr;
+	uint64_t return_address = ctx->uc_mcontext.rip;
+
+	printf("%s(): sig %d : info %p : ctx %p : return_address %lx.\n",
+	       __FUNCTION__, sig, info, ctx, return_address);
 }
 
 /* Set up a signal handler to catch SIGTRAP signals.  The SIGTRAP handler is
@@ -65,7 +70,7 @@ static int breakpoint_handler_init(void)
  *   0 = success.
  *   1 = failure.
  */
-static int breakpoint_handlet_set(void *addr)
+static int breakpoint_handler_set(void *addr)
 {
 	// Calculate the base address of that memory page that contains the
 	// function.
@@ -108,7 +113,8 @@ int main( )
 		return 1;
 	}
 
-	if (breakpoint_handlet_set(test_function)) {
+	printf("%s(): Breakpoint at %p.\n\n", __FUNCTION__, test_function);
+	if (breakpoint_handler_set(test_function)) {
 		printf("Failed to set a breakpoint.\n");
 		return 1;
 	}
@@ -116,8 +122,8 @@ int main( )
 	/* Call the test function.  Make sure it still works.  And make
 	 * sure the breakpoint handler executed.
 	 */
-	test_function();
-	printf("Call returned.\n");
+	int rc = test_function();
+	printf("Call returned 0x%x.\n", rc);
 
 	return 0;
 }
