@@ -171,7 +171,7 @@ static int breakpoint_handler_set(void *addr)
 {
 	// Calculate the base address of that memory page that contains the
 	// function.
-	unsigned char *addr2 = (char*) ((size_t) addr & pagemask);
+	unsigned char *addr2 = (unsigned char*) ((size_t) addr & pagemask);
 
 	// Make the page writeable.  It's executable code, so we have to
 	// enable writing to it in order to modify the code.
@@ -196,13 +196,6 @@ static int breakpoint_handler_set(void *addr)
 /* ************************************************************************** */
 /* ************************************************************************** */
 
-static int test_function(void)
-{
-	printf("%s(): You shouldn't see this message.\n", __FUNCTION__);
-
-	return 0x12345678;
-}
-
 int main( )
 {
 	printf("\nStarting test program.  pid %d\n\n", getpid());
@@ -212,7 +205,6 @@ int main( )
 		return 1;
 	}
 
-	//unsigned char *breakpoint_target = (unsigned char *) test_function;
 	unsigned char *breakpoint_target = (unsigned char *) mmap;
 	retaddr = breakpoint_target + 4;
 
@@ -226,10 +218,6 @@ int main( )
 	/* Call the test function.  Make sure it still works.  And make
 	 * sure the breakpoint handler executed.
 	 */
-#if 0
-	int rc = test_function();
-	printf("Call returned 0x%x.\n", rc);
-#else
 	unsigned char *m = NULL;
 	int fd = shm_open("my_shm", O_RDWR | O_CREAT, 0666);
 	printf("shm_open() returned %d (%m) (%s).\n", fd, (fd >= 0) ? "PASS": "FAIL");
@@ -247,7 +235,6 @@ int main( )
 		m = mmap(0, 65536, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	}
 	printf("mmap() returned %p.\n", m);
-#endif
 
 	return 0;
 }
