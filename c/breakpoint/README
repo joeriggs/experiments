@@ -1,0 +1,89 @@
+
+This program demonstrates how to set a breakpoint in an executing process.  The
+breakpoint in this program is very similar to how GDB can interrupt your program
+and allow you to take control.
+
+NOTE: This has only been successfully tested on Ubuntu 20.04 x86_64.  Other
+      platforms might be added later.
+
+The program shows how you can modify executable code and insert a breakpoint.
+It does 2 things:
+
+1. Intercepts calls to mmap().
+
+2. Intercepts returning from mmap().
+
+Here's how it works:
+
+1. It calls breakpint_handler_set(), which inserts a breakpoint (an "INT 3"
+   instruction) into the beginning of the mmap() function.  This allows us to
+   inject our breakpoint_handler() into the program flow each time mmap() is
+   called, thus allowing us to perform some pre-processing before mmap() runs.
+
+2. When mmap() is called, the "INT 3" instruction is executed, and that causes
+   the kernel to pass control to breakpoint_handler().  breakpoint_handler()
+   performs the following steps:
+
+   - Saves the return address that mmap() is supposed to return back to.
+     The address is saved in "mmap_retaddr".
+
+   - Replaces the return address with the address of breakpoint_return() (which
+     which is located in breakpoint_return.s).  Injecting breakpoint_return()
+     into the execution flow will will allow us to do some post-processing after
+     mmap() returns.
+
+3. breakpoint_handler() returns, and the kernel passes control back to mmap().
+   mmap() executes and does its memory mapping thing.
+
+4. When mmap() completes, it returns back to breakpoint_return() (because we
+   injected breakpoint_return() into the stack back in step #2).
+
+5. breakpoint_return() receives the address of the newly-mapped memory in its
+   %rax instruction.  This allows us to save that address for the future.  Keep
+   reading to see when we use it.
+
+6. breakpoint_return() then returns back to the return address of the function
+   that originally called mmap().
+
+At this point we have successfully intercepted a call to mmap(), and we've
+successfully saved the address of the memory that mmap() mapped into the process
+address space.
+
+- breakpoint.c
+
+  - This file contains most of the breakpoint-handling code.  It contains the
+    following functions:
+
+    - breakpoint_handler_init()
+
+    - breakpoint_handler_set()
+
+    - breakpoint_handler()
+
+- breakpoint_return.c
+
+  - This file contains the following function:
+
+    - breakpoint_return()
+
+  - NOTE: This file is NOT built into the breakpoint executable.  Instead, you
+          use it to create the breakpoint_return.s file.  Here's what we do:
+
+    1. "gcc -S breakpoint_return.c".  This command compiles breakpoint_return.c
+       and generates an assembly listing file called breakpoint_return.s.
+
+    2. Edit breakpoint_return.s.  Locate the "breakpoint_return:" label, and
+       replace the assembly code with the following:
+
+            movq    %fs:mmap_retaddr@tpoff, %rbx
+            push    %rbx
+            ret
+
+    3. Save breakpoint_return.s.  It is now ready to build into the breakpoint
+       executable.
+
+- test.c
+
+  - This is a program that shows how to use the breakpoint_handler in your own
+    program.  The API is simple.
+
