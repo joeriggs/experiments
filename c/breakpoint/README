@@ -1,13 +1,9 @@
 
-This program demonstrates how to set a breakpoint in an executing process.  The
-breakpoint in this program is very similar to how GDB can interrupt your program
-and allow you to take control.
+This program demonstrates how to set a breakpoint in an executing process.  The breakpoint in this program is very similar to how GDB can interrupt your program and allow you to take control.
 
-NOTE: This has only been successfully tested on Ubuntu 20.04 x86_64.  Other
-      platforms might be added later.
+NOTE: This has only been successfully tested on Ubuntu 20.04 x86_64.  Other platforms might be added later.
 
-The program shows how you can modify executable code and insert a breakpoint.
-It does 2 things:
+The program shows how you can modify executable code and insert a breakpoint.  It does 2 things:
 
 1. Intercepts calls to a specified function, such as mmap().
 
