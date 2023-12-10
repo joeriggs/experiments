@@ -11,11 +11,11 @@ The program shows how you can modify executable code and insert a breakpoint.  I
 
 Here's how it works:
 
-1. Call breakpoint_handler_init() to initialize the handler.  The handler registers a SIGTRAP handler (i.e. an "INT 3" handler).
+1. Call "breakpoint_handler_init()" to initialize the breakpoint_handler.  The handler registers a SIGTRAP handler (i.e. an "INT 3" handler).
 
-2. It calls breakpint_handler_set(), which inserts a breakpoint (an "INT 3" instruction) into the beginning of the function that we want to intercept.  Inserting the "INT 3" allows us to inject our breakpoint_handler() into the program flow each time the tracked function is called, thus allowing us to perform some pre-processing before the function runs.
+2. Call "breakpint_handler_set()", which inserts a breakpoint (an "INT 3" instruction) into the beginning of the function that we want to intercept and track.  Inserting the "INT 3" allows us to inject our breakpoint_handler() into the program flow each time the tracked function is called, thus allowing us to perform some pre-processing before the function runs.
 
-3. When the function is called, the "INT 3" instruction is executed, and that causes the kernel to pass control to breakpoint_handler().  breakpoint_handler() performs the following steps:
+3. When the tracked function is called, the "INT 3" instruction is executed, and that causes the kernel to pass control to breakpoint_handler().  breakpoint_handler() performs the following steps:
 
    - Save the return address that the tracked function is supposed to return back to.  The address is saved in "func_retaddr".
 
