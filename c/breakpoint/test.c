@@ -18,9 +18,9 @@ static int test_func_pre_processor(
 	return 0;
 }
 
-static int test_func_post_processor(int retcode)
+static int test_func_post_processor(uint64_t retcode)
 {
-	printf("%s(): 0x%x\n", __FUNCTION__, retcode);
+	printf("%s(): 0x%lx\n", __FUNCTION__, retcode);
 
 	return 0;
 }
