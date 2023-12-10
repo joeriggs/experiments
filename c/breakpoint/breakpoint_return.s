@@ -39,7 +39,7 @@ breakpoint_return:
 	je	.L3
 	movq	%fs:curr_ctx@tpoff, %rax
 	movq	32(%rax), %rax
-	movl	%edx, %edi
+	movq	%rdx, %rdi
 	call	*%rax
 
 	leave

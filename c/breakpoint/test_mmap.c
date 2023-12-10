@@ -7,7 +7,22 @@
 
 #include "breakpoint.h"
 
-breakpoint_context mmap_ctx;
+static int test_mmap_pre_processor(
+	int arg_01, int arg_02, int arg_03, int arg_04, int arg_05,
+	int arg_06, int arg_07, int arg_08, int arg_09, int arg_10)
+{
+	printf("%s(): %d %d %d %d %d %d\n", __FUNCTION__,
+	       arg_01, arg_02, arg_03, arg_04, arg_05, arg_06);
+
+	return 0;
+}
+
+static int test_mmap_post_processor(uint64_t retcode)
+{
+	printf("%s(): 0x%lx\n", __FUNCTION__, retcode);
+
+	return 0;
+}
 
 int main(int argc, char **argv)
 {
@@ -21,7 +36,7 @@ int main(int argc, char **argv)
 
 	// Set a breakpoint at the beginning of the mmap() function.
 	unsigned char *breakpoint_target = (unsigned char *) mmap;
-	if (breakpoint_handler_set(breakpoint_target, &mmap_ctx)) {
+	if (breakpoint_handler_set(breakpoint_target, test_mmap_pre_processor, test_mmap_post_processor)) {
 		printf("Failed to set a breakpoint.\n");
 		return 1;
 	}

@@ -16,8 +16,7 @@ __thread breakpoint_context *curr_ctx;
  * any processing that it wants, and then it returns back to the original
  * caller.
  *
- * When it is ready to return, it needs to perform something similar to the
- * following:
+ * It needs to perform something similar to the following:
  *
  * breakpoint_return:
  * .LFB0:
@@ -42,7 +41,7 @@ __thread breakpoint_context *curr_ctx;
  * 	je	.L3
  * 	movq	%fs:curr_ctx@tpoff, %rax
  * 	movq	32(%rax), %rax
- * 	movl	%edx, %edi
+ * 	movq	%rdx, %rdi
  * 	call	*%rax
  * 
  * 	leave
