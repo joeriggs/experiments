@@ -61,7 +61,7 @@ These are the files that comprise this project:
 
     - "gcc -S breakpoint_return.c".  This command compiles breakpoint_return.c and generates an assembly listing file called breakpoint_return.s.
 
-    - Edit breakpoint_return.s.  Locate the "breakpoint_return:" label, and replace the assembly code with code that is similar tothe following:
+    - Edit breakpoint_return.s.  Locate the "breakpoint_return:" label, and replace the assembly code with code that is similar to the following:
 
             movq    %fs:mmap_retaddr@tpoff, %rbx
             push    %rbx
@@ -77,7 +77,21 @@ These are the files that comprise this project:
 
   - This is a program that shows how to use the breakpoint_handler in your own program.  The API is simple.
 
+  - test.c contains a simple function that we will set a breakpoint in.  It also contains pre-processor and post-processor functions.  The relevent functions in this file are:
+
+    - test_func() is a simple function that receives 10 parameters, and it returns an int.
+
+    - test_func_pre_processor() is the pre-processor function.  When main() calls test_func(), the breakpoint_handler will pass control to test_func_pre_process() BEFORE test_func() runs.  This allows for pre-processing.
+
+    - test_func_post_processor() is the post-processor function.  When test_func() has completed its processing, it will return back to main().  But before control is passed back to main(), the breakpoint_handler will intercept control, and it will call test_func_post_processor().  This allows for post-processing.
+
 - test_mmap.c
 
   - This is a program that shows how to use the breakpoint_handler to intercept an actual glibc function.  It intercepts mmap().
+
+  - It contains the following relevent functions:
+
+    - test_mmap_pre_processor() is the pre-processor function.  When main() calls mmap(), the breakpoint_handler will pass control to test_mmap_pre_process() BEFORE mmap() runs.  This allows for pre-processing.  test_mmap_pre_processor() currently just prints all of the parameters that are being passed to mmap().
+
+    - test_mmap_post_processor() is the post-processor function.  When mmap() has completed its processing, it will return back to main().  But before control is passed back to main(), the breakpoint_handler will intercept control, and it will call test_mmap_post_processor().  This allows for post-processing.  The address of the newly-mapped memory is passed to test_mmap_post_processor().
 
