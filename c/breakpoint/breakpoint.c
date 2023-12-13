@@ -131,6 +131,24 @@ int breakpoint_handler_set(void *addr,
                            pre_processor_callback pre_cb,
                            post_processor_callback post_cb)
 {
+	unsigned char *func_ptr = (unsigned char *) addr;
+
+	// Make sure we understand what the function looks like.  We have
+	// limited ability to inject ourselves into a function.
+	//
+	// Ubuntu 20.04 has an endbr64 instruction at the beginning of each
+	// function.  endbr64 is 4 bytes.
+	//
+	// This is NOT necessarily the case on other operating systems.  So we
+	// need to change this code if we want it to work on other distros.
+	if ((func_ptr[0] != 0xf3) ||
+	    (func_ptr[1] != 0x0f) ||
+	    (func_ptr[2] != 0x1e) ||
+	    (func_ptr[3] != 0xfa)) {
+		return 1;
+	}
+	
+
 	breakpoint_context *ctx = NULL;
 
 	// Reserve a breakpoint context.
@@ -176,18 +194,11 @@ int breakpoint_handler_set(void *addr,
 		return 1;
 	}
 
-	// Modify the code.  Replace the endbr64 instruction with 3 NOPs and an
-	// "INT 3" instruction.
-	//
-	// TODO: This is how Ubuntu functions look.  They have an endbr64
-	//       instruction at the beginning of the function.  This is NOT
-	//       the case on other operating systems.  So we need to change
-	//       this code if we want it to work on other distributions.
-	unsigned char *p = (unsigned char *) addr;
-	p[0] = 0x90;
-	p[1] = 0x90;
-	p[2] = 0x90;
-	p[3] = 0xcc;
+	// Modify the code.  Insert an "INT 3".
+	func_ptr[0] = 0x90;
+	func_ptr[1] = 0x90;
+	func_ptr[2] = 0x90;
+	func_ptr[3] = 0xcc;
 
 	return 0;
 }

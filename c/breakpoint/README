@@ -95,3 +95,19 @@ These are the files that comprise this project:
 
     - test_mmap_post_processor() is the post-processor function.  When mmap() has completed its processing, it will return back to main().  But before control is passed back to main(), the breakpoint_handler will intercept control, and it will call test_mmap_post_processor().  This allows for post-processing.  The address of the newly-mapped memory is passed to test_mmap_post_processor().
 
+- Use it in your own program:
+
+To use this breakpoint_handler in your own program, you need to perform the following steps:
+
+1. Build breakpoint_handler.a by running "make".
+
+2. Provide your own pre-processor and post-processor functions.  Both are optional.  You only have to provide the one(s) that you require.  You can use the test_func_pre_processor() and test_func_post_processor() functions that are located in test.c as a starting point.
+
+3. From your program, call the following 2 functions:
+
+   A. breakpoint_handler_init() to initialize the breakpoint_handler.
+
+   B. breakpoint_handler_set() to set the breakpoint and register you pre-processor and post-processor functions.
+
+And that's it!  You should be able to inject your pre and post processors into the flow of another function.
+
